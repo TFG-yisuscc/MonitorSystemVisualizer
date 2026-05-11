@@ -27,6 +27,9 @@ htmlcov/
 .idea/usage.statistics.xml
 .idea/shelf/
 
+# Data (runs reales, no versionados)
+data/raw_runs/
+
 # OS
 .DS_Store
 Thumbs.db

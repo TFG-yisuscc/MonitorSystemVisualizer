@@ -1,0 +1,4 @@
+fan: true
+accelerator: false
+ambient_temperature_c: 22.5
+notes: "Fixture con meta para tests"

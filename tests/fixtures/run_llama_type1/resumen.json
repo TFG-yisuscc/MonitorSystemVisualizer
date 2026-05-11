@@ -1,0 +1,14 @@
+{
+  "anotations": "fixture run LLAMA",
+  "batch_size": 511,
+  "context_size": 1024,
+  "inference_engine": "LLAMA",
+  "model_path_or_name": "/home/user/tinytest.gguf",
+  "num_prompts": 2,
+  "og_config_json": "{\"anotations\":\"fixture run LLAMA\",\"batch_size\":511,\"context_size\":1024,\"hardware_period\":0.25,\"inference_engine\":\"LLAMA\",\"model_path_or_name\":\"/home/user/tinytest.gguf\",\"num_prompts\":2,\"ollama_url\":\"http://localhost:11434\",\"seed\":42,\"temperature\":0.0,\"test_type\":\"TYPE_1\"}",
+  "seed": 42,
+  "temperature": 0.0,
+  "test_type": "TYPE_1",
+  "timestamp_run_end": 1777806911276969566,
+  "timestamp_run_start": 1777806907101094214
+}

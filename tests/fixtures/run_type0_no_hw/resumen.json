@@ -1,0 +1,14 @@
+{
+  "anotations": "fixture TYPE_0 sin hardware",
+  "batch_size": 256,
+  "context_size": 512,
+  "inference_engine": "OLLAMA",
+  "model_path_or_name": "granite4:micro-h",
+  "num_prompts": 1,
+  "og_config_json": "{\"batch_size\":256,\"context_size\":512,\"hardware_period\":0.5,\"inference_engine\":\"OLLAMA\",\"model_path_or_name\":\"granite4:micro-h\",\"num_prompts\":1,\"seed\":42,\"temperature\":0.0,\"test_type\":\"TYPE_0\"}",
+  "seed": 42,
+  "temperature": 0.0,
+  "test_type": "TYPE_0",
+  "timestamp_run_end": 1777806800000000000,
+  "timestamp_run_start": 1777806700000000000
+}

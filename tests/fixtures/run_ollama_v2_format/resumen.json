@@ -1,0 +1,14 @@
+{
+  "annotations": "{\"accelerator\":false,\"fan\":true,\"other\":\"none\"}",
+  "batch_size": 512,
+  "context_size": 4096,
+  "inference_engine": "OLLAMA",
+  "model_path_or_name": "gemma3n:e2b",
+  "num_prompts": 1,
+  "og_config_json": "{\"batch_size\":512,\"context_size\":4096,\"hardware_period\":0.5,\"inference_engine\":\"OLLAMA\",\"model_path_or_name\":\"gemma3n:e2b\",\"num_prompts\":1,\"seed\":42,\"temperature\":0.7,\"test_type\":\"TYPE_1\"}",
+  "seed": 42,
+  "temperature": 0.7,
+  "test_type": "TYPE_1",
+  "timestamp_run_end": 1777981200000000000,
+  "timestamp_run_start": 1777981052528187795
+}

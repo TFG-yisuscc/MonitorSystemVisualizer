@@ -1,4 +1,5 @@
 from .composite import (
+    correlation_heatmap,
     cpu_memory_dual,
     cpu_memory_dual_phases,
     hw_distributions_panel,
@@ -8,8 +9,13 @@ from .composite import (
     logprob_panel,
     memory_timeline,
     pareto_panel,
+    pareto_panel_multi,
+    phase_breakdown_stacked,
+    sensitivity_curve,
     temp_freq_dual,
     temp_power_dual,
+    throttling_heatmap,
+    throughput_over_time,
 )
 from .primitives import (
     plot_dual_axis,
@@ -42,6 +48,7 @@ __all__ = [
     "MODEL_PALETTE",
     "RPI5_PEAK_MEMORY_BANDWIDTH_GBs",
     "TARGET_PEAK_MEMORY_BANDWIDTH_GBs",
+    "correlation_heatmap",
     "cpu_memory_dual",
     "cpu_memory_dual_phases",
     "format_seconds",
@@ -53,6 +60,8 @@ __all__ = [
     "logprob_panel",
     "memory_timeline",
     "pareto_panel",
+    "pareto_panel_multi",
+    "phase_breakdown_stacked",
     "plot_dual_axis",
     "plot_freq_per_core",
     "plot_hw_line",
@@ -65,7 +74,10 @@ __all__ = [
     "plot_prompt_phases",
     "plot_prompt_spans",
     "plot_throttle_markers",
+    "sensitivity_curve",
     "setup_style",
     "temp_freq_dual",
     "temp_power_dual",
+    "throttling_heatmap",
+    "throughput_over_time",
 ]

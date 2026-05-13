@@ -294,25 +294,6 @@ def _mbu_pct(
     return min(achieved_gbs / peak_bandwidth_gbs * 100, 100.0)
 
 
-def _flops_gflops(
-    model_info: dict | None,
-    tokens_per_s: float | None,
-) -> float | None:
-    """Estimated decode FLOPS in GFLOPS.
-
-    Approximation: 2 x n_params x tokens_per_s (standard LLM literature estimate).
-    Does not account for attention KV cache overhead.
-    """
-    if model_info is None or tokens_per_s is None or tokens_per_s <= 0:
-        return None
-    n_params = model_info.get("n_params")
-    if n_params is None:
-        return None
-    try:
-        return 2.0 * int(n_params) * tokens_per_s / 1e9
-    except (ValueError, TypeError):
-        return None
-
 
 def power_per_phase_df(run: Run) -> pd.DataFrame:
     """Compute mean power during each inference phase (load, prefill, decode).

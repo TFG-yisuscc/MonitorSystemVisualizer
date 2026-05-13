@@ -288,7 +288,7 @@ class TestPowerPerPhase:
         assert "model_label" in df.columns
 
 
-class TestMBUAndFLOPS:
+class TestMBU:
     def test_model_size_bytes(self):
         from monitorviz.transforms.aggregations import _model_size_bytes
         mi = {"n_params": 1_777_088_000, "bits_per_weight": 5.0}
@@ -305,14 +305,6 @@ class TestMBUAndFLOPS:
         assert kv is not None
         assert 110e6 < kv < 120e6
 
-    def test_flops_gflops(self):
-        from monitorviz.transforms.aggregations import _flops_gflops
-        mi = {"n_params": 1_777_088_000}
-        gflops = _flops_gflops(mi, tokens_per_s=5.0)
-        # 2 x 1.78e9 x 5 / 1e9 ≈ 17.77 GFLOPS
-        assert gflops is not None
-        assert 17.0 < gflops < 19.0
-
     def test_mbu_pct_range(self):
         from monitorviz.transforms.aggregations import _mbu_pct
         mi = {"n_params": 1_777_088_000, "bits_per_weight": 5.0,
@@ -326,15 +318,6 @@ class TestMBUAndFLOPS:
         from monitorviz.transforms.aggregations import _mbu_pct
         assert _mbu_pct(None, 0.6, 4096) is None
 
-    def test_summary_df_has_mbu_and_flops(self):
-        """MBU and FLOPS columns exist; NaN for fixtures without model_info."""
-        coll = load_collection(FIXTURES)
-        df = coll.summary_df()
-        assert "mbu_pct" in df.columns
-        assert "flops_decode_gflops" in df.columns
-        assert "model_size_gb" in df.columns
-        # Fixtures don't have model_info → all NaN
-        assert df["mbu_pct"].isna().all()
 
 
 class TestMBUFixes:

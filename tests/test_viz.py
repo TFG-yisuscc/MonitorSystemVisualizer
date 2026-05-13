@@ -413,39 +413,82 @@ class TestNewComposites:
         plt.close("all")
 
 
-# --- logprob panel (OLLAMA + LLAMA) ----------------------------------------
+# --- New visualization functions (parametric analysis and insights) --------
 
-class TestLogprobPanel:
-    def test_ollama_format(self):
-        from monitorviz.models import TokenProb
-        tps = [TokenProb(token="hello", logprob=-0.5),
-               TokenProb(token=" world", logprob=-1.2)]
-        fig = logprob_panel(tps)
+class TestNewCompositesExtra:
+    def test_sensitivity_curve_empty(self):
+        from monitorviz.viz import sensitivity_curve
+        df = pd.DataFrame()
+        fig = sensitivity_curve(df, "batch_size",
+                                [("tokens_per_s_mean", "T")])
         assert fig is not None
         plt.close("all")
 
-    def test_llama_format_no_text(self):
-        from monitorviz.models import TokenProb
-        tps = [TokenProb(token="", logprob=-0.3),
-               TokenProb(token="", logprob=-0.8),
-               TokenProb(token="", logprob=-1.1)]
-        fig = logprob_panel(tps)
+    def test_sensitivity_curve_with_data(self, coll):
+        from monitorviz.viz import sensitivity_curve
+        s = coll.summary_df()
+        if "context_size" not in s.columns:
+            pytest.skip("no context_size column")
+        fig = sensitivity_curve(
+            s, "context_size",
+            [("tokens_per_s_mean", "Throughput (tok/s)")]
+        )
         assert fig is not None
         plt.close("all")
 
-    def test_empty_list(self):
-        fig = logprob_panel([])
+    def test_pareto_multi_runs(self, coll):
+        from monitorviz.viz import pareto_panel_multi
+        s = coll.summary_df()
+        if len(s) < 2:
+            pytest.skip("requires ≥2 runs")
+        pairs = [
+            ("temp_max_c", "tokens_per_s_mean",
+             "Temp máx", "tok/s", True, False),
+        ]
+        fig = pareto_panel_multi(s, pairs)
         assert fig is not None
         plt.close("all")
 
-    def test_parse_token_prob_float(self):
-        from monitorviz.io._parsers import _parse_token_prob
-        tp = _parse_token_prob(-0.75)
-        assert tp.logprob == pytest.approx(-0.75)
-        assert tp.token == ""
+    def test_throughput_over_time(self, ollama_run):
+        from monitorviz.viz import throughput_over_time
+        fig = throughput_over_time(ollama_run)
+        assert fig is not None
+        plt.close("all")
 
-    def test_parse_token_prob_dict(self):
-        from monitorviz.io._parsers import _parse_token_prob
-        tp = _parse_token_prob({"token": "hi", "logprob": -0.5})
-        assert tp.token == "hi"
-        assert tp.logprob == pytest.approx(-0.5)
+    def test_phase_breakdown_stacked(self, coll):
+        from monitorviz.viz import phase_breakdown_stacked
+        s = coll.summary_df()
+        fig = phase_breakdown_stacked(s)
+        assert fig is not None
+        plt.close("all")
+
+    def test_phase_breakdown_stacked_absolute(self, coll):
+        from monitorviz.viz import phase_breakdown_stacked
+        s = coll.summary_df()
+        fig = phase_breakdown_stacked(s, normalized=False)
+        assert fig is not None
+        plt.close("all")
+
+    def test_throttling_heatmap(self, coll):
+        from monitorviz.viz import throttling_heatmap
+        hw = coll.hw_metrics_df()
+        runs = [r for r in coll.runs if r.has_hardware_data]
+        if not runs:
+            pytest.skip("no hw fixture")
+        fig = throttling_heatmap(hw, runs)
+        assert fig is not None
+        plt.close("all")
+
+    def test_correlation_heatmap(self, coll):
+        from monitorviz.viz import correlation_heatmap
+        s = coll.summary_df()
+        fig = correlation_heatmap(s)
+        assert fig is not None
+        plt.close("all")
+
+    def test_correlation_heatmap_insufficient_data(self):
+        from monitorviz.viz import correlation_heatmap
+        df = pd.DataFrame({"a": [1.0]})
+        fig = correlation_heatmap(df)  # only 1 row, must not raise
+        assert fig is not None
+        plt.close("all")

@@ -12,7 +12,6 @@ import pandas as pd
 from monitorviz.models import Run
 
 from .aggregations import (
-    _flops_gflops,
     _mbu_pct,
     _model_size_bytes,
     hw_freq_long,
@@ -159,7 +158,6 @@ class RunCollection:
             seq_len = run.summary.context_size
             model_bytes = _model_size_bytes(mi)
             row["model_size_gb"] = model_bytes / 1e9 if model_bytes is not None else np.nan
-            row["flops_decode_gflops"] = _flops_gflops(mi, tps)
             row["mbu_pct"] = _mbu_pct(
                 mi,
                 tpot,

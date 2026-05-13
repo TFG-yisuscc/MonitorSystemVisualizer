@@ -627,3 +627,400 @@ def hw_distributions_panel(
     )
     fig.tight_layout()
     return fig
+
+
+# --- New visualization functions for parametric analysis and advanced insights ---
+
+def sensitivity_curve(
+    summary_df: pd.DataFrame,
+    param_col: str,
+    metrics: list[tuple[str, str]],
+    *,
+    group_col: str | None = None,
+    figsize: tuple[float, float] = (14, 5),
+    title: str | None = None,
+    param_label: str | None = None,
+    log_x: bool = False,
+) -> Figure:
+    """Sensitivity analysis curve: metric vs experimental parameter.
+
+    Args:
+        summary_df: aggregated summary, one row per run.
+        param_col: column name of the experimental parameter (X axis),
+                   e.g. "context_size", "batch_size", "bits_per_weight".
+        metrics: list of (column, label) tuples — one subplot per metric.
+        group_col: optional column to draw separate lines (e.g., "model_label"
+                   when comparing several models in the same experiment).
+        log_x: use logarithmic X axis (useful for batch_size or context_size).
+
+    Returns:
+        Matplotlib Figure with one subplot per metric.
+    """
+    # Handle empty dataframe or missing param_col
+    if summary_df.empty or param_col not in summary_df.columns:
+        fig, ax = plt.subplots(figsize=figsize)
+        ax.text(0.5, 0.5, "Sin datos para esta sensibilidad",
+                ha="center", va="center", transform=ax.transAxes)
+        return fig
+
+    data = summary_df.dropna(subset=[param_col]).copy()
+    if data.empty:
+        fig, ax = plt.subplots(figsize=figsize)
+        ax.text(0.5, 0.5, "Sin datos para esta sensibilidad",
+                ha="center", va="center", transform=ax.transAxes)
+        return fig
+
+    n = len(metrics)
+    ncols = min(n, 2)
+    nrows = (n + 1) // ncols
+    fig, axes = plt.subplots(nrows, ncols,
+                             figsize=(figsize[0], figsize[1] * nrows),
+                             squeeze=False)
+    axes_flat = axes.flatten()
+
+    for ax, (col, ylabel) in zip(axes_flat, metrics):
+        if col not in data.columns:
+            ax.text(0.5, 0.5, f"Sin columna {col}",
+                    ha="center", va="center", transform=ax.transAxes)
+            continue
+        sub = data.dropna(subset=[col])
+        if sub.empty:
+            ax.text(0.5, 0.5, f"Sin datos para {col}",
+                    ha="center", va="center", transform=ax.transAxes)
+            continue
+
+        if group_col and group_col in sub.columns:
+            groups = sorted(sub[group_col].dropna().unique())
+            for grp in groups:
+                gsub = sub[sub[group_col] == grp].sort_values(param_col)
+                ax.plot(gsub[param_col], gsub[col],
+                        "o-", lw=1.8, ms=8, label=str(grp))
+            ax.legend(loc="best", fontsize=9)
+        else:
+            sub_sorted = sub.sort_values(param_col)
+            ax.plot(sub_sorted[param_col], sub_sorted[col],
+                    "o-", lw=1.8, ms=8, color="tab:blue")
+
+        ax.set_xlabel(param_label or param_col)
+        ax.set_ylabel(ylabel)
+        if log_x:
+            ax.set_xscale("log", base=2)
+        ax.grid(True, alpha=0.3)
+
+    for j in range(n, len(axes_flat)):
+        axes_flat[j].set_visible(False)
+
+    if title:
+        fig.suptitle(title, y=1.01, fontsize=13)
+    fig.tight_layout()
+    return fig
+
+
+def pareto_panel_multi(
+    summary_df: pd.DataFrame,
+    pairs: list[tuple[str, str, str, str, bool, bool]],
+    *,
+    label_col: str = "model_label",
+    figsize: tuple[float, float] = (7, 5),
+    title: str | None = None,
+) -> Figure:
+    """Multiple Pareto trade-off scatter plots.
+
+    Args:
+        pairs: list of (x_col, y_col, x_label, y_label,
+                        x_lower_is_better, y_lower_is_better) tuples.
+        label_col: column to annotate each point.
+    """
+    n = len(pairs)
+    ncols = min(n, 2)
+    nrows = (n + 1) // ncols
+    fig, axes = plt.subplots(
+        nrows, ncols, squeeze=False,
+        figsize=(figsize[0] * ncols, figsize[1] * nrows),
+    )
+    axes_flat = axes.flatten()
+
+    for ax, (xc, yc, xl, yl, x_lower, y_lower) in zip(axes_flat, pairs):
+        data = summary_df.dropna(subset=[xc, yc]).copy()
+        if data.empty:
+            ax.text(0.5, 0.5, "Sin datos", ha="center", va="center",
+                    transform=ax.transAxes)
+            continue
+
+        ax.scatter(data[xc], data[yc], s=120, alpha=0.85,
+                   color="tab:blue", edgecolor="black", zorder=3)
+        for _, row in data.iterrows():
+            ax.annotate(str(row[label_col]),
+                        (row[xc], row[yc]),
+                        xytext=(6, 4), textcoords="offset points",
+                        fontsize=9)
+
+        # Compute Pareto front
+        # For each point, check if any other dominates it
+        pts = data[[xc, yc]].to_numpy()
+        n_pts = len(pts)
+        is_dominated = np.zeros(n_pts, dtype=bool)
+        for i in range(n_pts):
+            for j in range(n_pts):
+                if i == j:
+                    continue
+                x_better = ((pts[j, 0] <= pts[i, 0]) if x_lower
+                            else (pts[j, 0] >= pts[i, 0]))
+                y_better = ((pts[j, 1] <= pts[i, 1]) if y_lower
+                            else (pts[j, 1] >= pts[i, 1]))
+                strict = (
+                    (pts[j, 0] != pts[i, 0]) or (pts[j, 1] != pts[i, 1])
+                )
+                if x_better and y_better and strict:
+                    is_dominated[i] = True
+                    break
+
+        front = data[~is_dominated].sort_values(xc)
+        ax.plot(front[xc], front[yc],
+                color="tab:red", lw=1.5, ls="--",
+                label="Frontera Pareto", zorder=2)
+
+        ax.set_xlabel(xl + (" ↓ mejor" if x_lower else " ↑ mejor"))
+        ax.set_ylabel(yl + (" ↓ mejor" if y_lower else " ↑ mejor"))
+        ax.grid(True, alpha=0.3)
+        ax.legend(fontsize=9)
+
+    for j in range(n, len(axes_flat)):
+        axes_flat[j].set_visible(False)
+
+    if title:
+        fig.suptitle(title, y=1.01, fontsize=13)
+    fig.tight_layout()
+    return fig
+
+
+def throughput_over_time(
+    run: Run,
+    *,
+    figsize: tuple[float, float] = (12, 5),
+    max_prompts: int = 5,
+    title: str | None = None,
+) -> Figure:
+    """Cumulative tokens generated over time, one curve per prompt.
+
+    For each non-empty prompt, plots cumulative token count vs elapsed
+    decode time. Slope = instantaneous tokens/s. A flattening curve
+    indicates throttling or KV cache slowdown.
+
+    Args:
+        run: Run object with prompts and tokens.
+        max_prompts: limit number of prompts plotted to avoid clutter.
+    """
+    fig, ax = plt.subplots(figsize=figsize)
+
+    plotted = 0
+    for p in run.prompts:
+        if p.is_empty_generation or not p.tokens:
+            continue
+        if plotted >= max_prompts:
+            break
+        n_tokens = len(p.tokens)
+        eval_s = p.eval_duration_ns / 1e9
+        if eval_s <= 0 or n_tokens == 0:
+            continue
+        # Assume uniform distribution of tokens over decode time (approx)
+        t = np.linspace(0, eval_s, n_tokens + 1)
+        cum = np.arange(0, n_tokens + 1)
+        ax.plot(t, cum, lw=1.8, marker=".", ms=3,
+                label=f"prompt {p.prompt_id} ({n_tokens} tok)")
+        plotted += 1
+
+    ax.set_xlabel("Tiempo de decode (s)")
+    ax.set_ylabel("Tokens acumulados generados")
+    ax.set_title(title or f"Generación acumulada — {run.model_short}")
+    ax.legend(loc="best", fontsize=9)
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    return fig
+
+
+def phase_breakdown_stacked(
+    summary_df: pd.DataFrame,
+    *,
+    label_col: str = "model_label",
+    figsize: tuple[float, float] = (12, 5),
+    title: str | None = None,
+    normalized: bool = True,
+) -> Figure:
+    """Stacked bar of load/prefill/decode time per model.
+
+    Args:
+        normalized: if True, bars sum to 100%. If False, absolute seconds.
+    """
+    cols = ["load_s_mean", "prefill_s_mean", "decode_s_mean"]
+    available = [c for c in cols if c in summary_df.columns]
+    if not available:
+        # Fallback: derive from durations
+        df = summary_df.copy()
+        df["load_s_mean"] = df.get("load_duration_ns_mean", 0) / 1e9
+        df["prefill_s_mean"] = df.get(
+            "prompt_eval_duration_ns_mean", 0) / 1e9
+        df["decode_s_mean"] = df.get("eval_duration_ns_mean", 0) / 1e9
+        available = cols
+    else:
+        df = summary_df.copy()
+
+    data = df.dropna(subset=available).copy()
+    if data.empty:
+        fig, ax = plt.subplots(figsize=figsize)
+        ax.text(0.5, 0.5, "Sin datos de fases",
+                ha="center", va="center", transform=ax.transAxes)
+        return fig
+
+    if normalized:
+        total = data[available].sum(axis=1)
+        for c in available:
+            data[c] = data[c] / total * 100
+        ylabel = "Proporción de tiempo (%)"
+    else:
+        ylabel = "Tiempo (s)"
+
+    phase_labels = {"load_s_mean": "Load",
+                    "prefill_s_mean": "Prefill",
+                    "decode_s_mean": "Decode"}
+    colors = {"load_s_mean": "#bcbd22",
+              "prefill_s_mean": "#17becf",
+              "decode_s_mean": "#ff7f0e"}
+
+    fig, ax = plt.subplots(figsize=figsize)
+    bottom = np.zeros(len(data))
+    for c in available:
+        ax.bar(data[label_col], data[c],
+               bottom=bottom, label=phase_labels[c], color=colors[c])
+        bottom += data[c].to_numpy()
+
+    ax.set_xlabel("")
+    ax.set_ylabel(ylabel)
+    ax.set_title(title or
+                 ("Desglose de fases (proporción)" if normalized
+                  else "Desglose de fases (absoluto)"))
+    ax.legend(title="Fase", loc="upper right")
+    if normalized:
+        ax.set_ylim(0, 105)
+    fig.tight_layout()
+    return fig
+
+
+def throttling_heatmap(
+    hw_df: pd.DataFrame,
+    runs: list[Run],
+    *,
+    bins: int = 60,
+    figsize: tuple[float, float] = (12, 5),
+    title: str | None = None,
+) -> Figure:
+    """Heatmap of throttling events across runs.
+
+    Each row is a run, each column is a time bin (1/bins of total run duration).
+    Cell color: 1.0 if any throttling flag was active in that bin, 0.0 otherwise.
+    """
+    rows = []
+    labels = []
+    for r in runs:
+        sub = hw_df[hw_df["run_id"] == r.run_id]
+        if sub.empty:
+            continue
+        # Compute "any throttling active" boolean per sample
+        throttle_cols = [c for c in sub.columns
+                         if c.startswith("throt_")
+                         and not c.endswith("_occurred")]
+        if not throttle_cols:
+            continue
+        sub = sub.copy()
+        sub["any_throt"] = sub[throttle_cols].any(axis=1).astype(int)
+        # Bin by time
+        t_max = sub["t_rel_s"].max()
+        bin_edges = np.linspace(0, t_max, bins + 1)
+        idx = np.digitize(sub["t_rel_s"], bin_edges) - 1
+        idx = np.clip(idx, 0, bins - 1)
+        row = np.zeros(bins)
+        for i, v in zip(idx, sub["any_throt"]):
+            row[i] = max(row[i], v)
+        rows.append(row)
+        fan_tag = "fan" if r.meta.fan else "no-fan"
+        labels.append(f"{getattr(r, 'model_label', r.model_short)} ({fan_tag})")
+
+    if not rows:
+        fig, ax = plt.subplots(figsize=figsize)
+        ax.text(0.5, 0.5, "Sin datos de throttling",
+                ha="center", va="center", transform=ax.transAxes)
+        return fig
+
+    matrix = np.array(rows)
+    fig, ax = plt.subplots(figsize=(figsize[0],
+                                    max(3, 0.4 * len(labels))))
+    im = ax.imshow(matrix, aspect="auto", cmap="Reds",
+                   interpolation="nearest", vmin=0, vmax=1)
+    ax.set_yticks(range(len(labels)))
+    ax.set_yticklabels(labels, fontsize=9)
+    ax.set_xticks([0, bins // 2, bins - 1])
+    ax.set_xticklabels(["inicio", "mitad", "fin"], fontsize=9)
+    ax.set_xlabel("Tiempo del run (normalizado)")
+    ax.set_title(title or "Eventos de throttling por run")
+    cbar = fig.colorbar(im, ax=ax, fraction=0.025, pad=0.02)
+    cbar.set_label("Throttling activo", fontsize=9)
+    fig.tight_layout()
+    return fig
+
+
+def correlation_heatmap(
+    summary_df: pd.DataFrame,
+    *,
+    cols: list[str] | None = None,
+    method: str = "pearson",
+    figsize: tuple[float, float] = (9, 7),
+    title: str | None = None,
+) -> Figure:
+    """Pearson correlation heatmap between key performance metrics.
+
+    Args:
+        cols: list of column names; if None, uses a sensible default set.
+        method: "pearson", "spearman", or "kendall".
+    """
+    try:
+        import seaborn as sns
+    except ImportError:
+        fig, ax = plt.subplots(figsize=figsize)
+        ax.text(0.5, 0.5,
+                "Seaborn no instalado.\n"
+                "Instala con: uv pip install seaborn",
+                ha="center", va="center", transform=ax.transAxes)
+        return fig
+
+    default_cols = [
+        "tokens_per_s_mean",
+        "ttft_ms_mean",
+        "latency_ms_mean",
+        "perplexity_geomean",
+        "temp_max_c",
+        "temp_mean_c",
+        "power_mean_w",
+        "power_max_w",
+        "energy_per_token_j",
+        "mbu_pct",
+        "throttled_ratio",
+    ]
+    use_cols = cols or [c for c in default_cols if c in summary_df.columns]
+    data = summary_df[use_cols].dropna(how="all")
+    if data.empty or len(data) < 2:
+        fig, ax = plt.subplots(figsize=figsize)
+        ax.text(0.5, 0.5,
+                "Sin datos suficientes\n(se requieren ≥2 runs con métricas)",
+                ha="center", va="center", transform=ax.transAxes)
+        return fig
+
+    corr = data.corr(method=method)
+    fig, ax = plt.subplots(figsize=figsize)
+    sns.heatmap(corr, annot=True, fmt=".2f", cmap="RdBu_r",
+                vmin=-1, vmax=1, center=0, square=True,
+                ax=ax, cbar_kws={"shrink": 0.7})
+    ax.set_title(title or f"Correlación {method} entre métricas")
+    fig.tight_layout()
+    return fig
+
+

@@ -973,7 +973,7 @@ def correlation_heatmap(
     *,
     cols: list[str] | None = None,
     method: str = "pearson",
-    figsize: tuple[float, float] = (9, 7),
+    figsize: tuple[float, float] | None = None,
     title: str | None = None,
 ) -> Figure:
     """Pearson correlation heatmap between key performance metrics.
@@ -981,45 +981,72 @@ def correlation_heatmap(
     Args:
         cols: list of column names; if None, uses a sensible default set.
         method: "pearson", "spearman", or "kendall".
+        figsize: (width, height) in inches; auto-sized if None.
     """
     try:
         import seaborn as sns
     except ImportError:
-        fig, ax = plt.subplots(figsize=figsize)
+        fig, ax = plt.subplots()
         ax.text(0.5, 0.5,
                 "Seaborn no instalado.\n"
                 "Instala con: uv pip install seaborn",
                 ha="center", va="center", transform=ax.transAxes)
         return fig
 
+    _ALIASES = {
+        "tokens_per_s_mean":   "tok/s",
+        "ttft_ms_mean":        "TTFT",
+        "latency_ms_mean":     "latencia",
+        "perplexity_geomean":  "PPL",
+        "temp_max_c":          "temp_máx",
+        "temp_mean_c":         "temp_med",
+        "power_mean_w":        "W_med",
+        "power_max_w":         "W_máx",
+        "energy_per_token_j":  "J/tok",
+        "mbu_pct":             "MBU",
+        "throttled_ratio":     "throttle",
+    }
     default_cols = [
-        "tokens_per_s_mean",
-        "ttft_ms_mean",
-        "latency_ms_mean",
-        "perplexity_geomean",
-        "temp_max_c",
-        "temp_mean_c",
-        "power_mean_w",
-        "power_max_w",
-        "energy_per_token_j",
-        "mbu_pct",
-        "throttled_ratio",
+        "tokens_per_s_mean", "ttft_ms_mean", "latency_ms_mean",
+        "perplexity_geomean", "temp_max_c", "temp_mean_c",
+        "power_mean_w", "power_max_w", "energy_per_token_j",
+        "mbu_pct", "throttled_ratio",
     ]
     use_cols = cols or [c for c in default_cols if c in summary_df.columns]
     data = summary_df[use_cols].dropna(how="all")
     if data.empty or len(data) < 2:
-        fig, ax = plt.subplots(figsize=figsize)
-        ax.text(0.5, 0.5,
-                "Sin datos suficientes\n(se requieren ≥2 runs con métricas)",
+        fig, ax = plt.subplots()
+        ax.text(0.5, 0.5, "Sin datos suficientes (≥2 runs)",
                 ha="center", va="center", transform=ax.transAxes)
         return fig
 
     corr = data.corr(method=method)
-    fig, ax = plt.subplots(figsize=figsize)
-    sns.heatmap(corr, annot=True, fmt=".2f", cmap="RdBu_r",
-                vmin=-1, vmax=1, center=0, square=True,
-                ax=ax, cbar_kws={"shrink": 0.7})
-    ax.set_title(title or f"Correlación {method} entre métricas")
+    corr.columns = [_ALIASES.get(c, c) for c in corr.columns]
+    corr.index = [_ALIASES.get(c, c) for c in corr.index]
+
+    n = len(corr)
+    auto_size = max(10, n * 0.9)
+    fs = figsize or (auto_size, auto_size * 0.85)
+
+    fig, ax = plt.subplots(figsize=fs)
+    sns.heatmap(
+        corr,
+        annot=True,
+        fmt=".2f",
+        cmap="RdBu_r",
+        vmin=-1, vmax=1, center=0,
+        square=True,
+        linewidths=0.4,
+        annot_kws={"size": max(7, 10 - n // 3)},
+        ax=ax,
+        cbar_kws={"shrink": 0.7, "label": f"r ({method})"},
+    )
+    ax.set_title(
+        title or f"Correlación {method} entre métricas (n={len(data)} runs)",
+        pad=14, fontsize=12,
+    )
+    ax.tick_params(axis="x", rotation=45, labelsize=10)
+    ax.tick_params(axis="y", rotation=0, labelsize=10)
     fig.tight_layout()
     return fig
 

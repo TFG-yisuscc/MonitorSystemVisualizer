@@ -53,7 +53,7 @@ def plot_hw_line(
     else:
         ax.plot(
             hw_df["t_rel_s"], hw_df[metric],
-            color=color or "C0", label=label,
+            color=color or "C0", label=label, zorder=3,
         )
     return ax
 
@@ -73,6 +73,45 @@ def plot_freq_per_core(ax: Axes, freq_long_df: pd.DataFrame) -> Axes:
 
 
 # --- Annotations on top of timelines --------------------------------------
+
+def _merge_throttling_intervals(
+    hw_df: pd.DataFrame,
+    gap_s: float = 2.0,
+) -> list[tuple[float, float]]:
+    """Merge consecutive throttling samples into contiguous intervals.
+
+    Instead of one axvspan per sample (causes alpha stacking), this
+    returns one (t_start, t_end) per contiguous block of throttling.
+
+    Args:
+        gap_s: samples closer than gap_s seconds are merged into one interval.
+    """
+    throttle_cols = [
+        c for c in hw_df.columns
+        if c.startswith("throt_") and not c.endswith("_occurred")
+    ]
+    if not throttle_cols:
+        return []
+
+    hw = hw_df.sort_values("t_rel_s").copy()
+    hw["_any_throt"] = hw[throttle_cols].any(axis=1)
+    throt_times = hw.loc[hw["_any_throt"], "t_rel_s"].to_numpy()
+
+    if len(throt_times) == 0:
+        return []
+
+    intervals: list[tuple[float, float]] = []
+    t_start = throt_times[0]
+    t_prev = throt_times[0]
+
+    for t in throt_times[1:]:
+        if t - t_prev > gap_s:
+            intervals.append((t_start, t_prev))
+            t_start = t
+        t_prev = t
+    intervals.append((t_start, t_prev))
+    return intervals
+
 
 def plot_prompt_spans(
     ax: Axes,
@@ -238,6 +277,21 @@ def plot_phase_strip(
         ("eval_duration_ns", COLORS["phase_decode"], "decode"),
     ]
 
+    # Get total duration for conditional text rendering
+    t_min = prompt_df["t_rel_s"].min()
+    t_max = prompt_df["t_rel_s"].max()
+    # Add duration of last prompt's last phase to get end time
+    last_row = prompt_df.iloc[-1]
+    last_t = float(last_row["t_rel_s"]) + float(
+        last_row["load_duration_ns"] + last_row["prompt_eval_duration_ns"] +
+        last_row["eval_duration_ns"]
+    ) / 1e9
+    x_total = last_t - t_min
+    if x_total <= 0:
+        x_total = 1.0
+
+    short_names = {"load": "L", "prefill": "P", "decode": "D"}
+
     for _, row in prompt_df.iterrows():
         cursor = float(row["t_rel_s"])
         prompt_start = cursor
@@ -248,48 +302,56 @@ def plot_phase_strip(
             if dur_s <= 0:
                 continue
             visible_w = max(dur_s, min_visible_width_s)
+            width_frac = (dur_s / x_total) if x_total > 0 else 0
             ax.fill_between(
                 [cursor, cursor + visible_w],
                 0, 1,
                 alpha=0.85, color=color, zorder=2, linewidth=0,
                 transform=ax.get_xaxis_transform(),
             )
-            band_center_x = cursor + visible_w / 2
-            if visible_w >= 4.0:
-                if annotate_durations:
-                    ax.text(
-                        band_center_x, 0.65,
-                        f"{dur_s:.1f}s",
-                        ha="center", va="center",
-                        fontsize=9, color="black",
-                        transform=ax.get_xaxis_transform(),
-                    )
+
+            # Show text only if region is ≥ 3% of total duration
+            if width_frac >= 0.03:
+                short = short_names.get(label, label[0].upper())
+                # Show duration only if ≥ 8% of total
+                if width_frac >= 0.08:
+                    text_label = f"{short}\n{dur_s:.0f}s"
+                else:
+                    text_label = short
+
                 ax.text(
-                    band_center_x, 0.30,
-                    label,
-                    ha="center", va="center",
-                    fontsize=8, color="black", style="italic",
+                    cursor + dur_s * 0.15,  # slightly offset from start
+                    0.75,
+                    text_label,
                     transform=ax.get_xaxis_transform(),
+                    rotation=45,
+                    ha="left",
+                    va="bottom",
+                    fontsize=7,
+                    clip_on=True,
+                    zorder=3,
                 )
-            elif visible_w >= 2.0:
-                ax.text(
-                    band_center_x, 0.5,
-                    label,
-                    ha="center", va="center",
-                    fontsize=8, color="black",
-                    transform=ax.get_xaxis_transform(),
-                )
-            # Else: too narrow — color alone conveys the information.
             cursor += dur_s
 
         if annotate_prompt_ids:
-            ax.text(
-                (prompt_start + cursor) / 2, 1.20,
-                f"#{prompt_id}",
-                ha="center", va="bottom",
-                fontsize=10, color="#444444", fontweight="bold",
-                transform=ax.get_xaxis_transform(),
-            )
+            prompt_duration = (
+                float(row["load_duration_ns"]) +
+                float(row["prompt_eval_duration_ns"]) +
+                float(row["eval_duration_ns"])
+            ) / 1e9
+            prompt_end = cursor
+            width_frac_prompt = (prompt_duration / x_total) if x_total > 0 else 0
+            # Show prompt id only if region is ≥ 2.5% of total
+            if width_frac_prompt >= 0.025:
+                ax.text(
+                    (prompt_start + prompt_end) / 2, 0.90,
+                    f"#{prompt_id}",
+                    transform=ax.get_xaxis_transform(),
+                    ha="center", va="top",
+                    fontsize=6,
+                    clip_on=True,
+                    zorder=3,
+                )
 
     ax.set_yticks([])
     ax.set_ylabel("Fases", rotation=0, ha="right", va="center", labelpad=15)
@@ -304,13 +366,34 @@ def plot_throttle_markers(
     hw_df: pd.DataFrame,
     *,
     color: str | None = None,
-    alpha: float = 0.7,
+    alpha: float = 0.5,
+    hardware_period_s: float = 0.5,
 ) -> Axes:
-    """Draw vertical lines at every sample where throttling was active."""
+    """Shade intervals where throttling was active.
+
+    Merges consecutive throttling samples into contiguous blocks to avoid
+    alpha stacking when thousands of samples overlap. Uses a hatch pattern
+    (fill=False) so data lines remain fully visible through the overlay.
+
+    Parameters
+    ----------
+    hardware_period_s : float
+        Expected interval between hw samples (in seconds). Used to compute
+        the gap threshold for merging intervals (gap_s = hardware_period_s * 3).
+    """
     color = color or COLORS["throttle"]
-    active = hw_df[hw_df["throt_any_active"]]
-    for t in active["t_rel_s"]:
-        ax.axvline(t, color=color, lw=1.0, alpha=alpha, zorder=3)
+    gap_s = hardware_period_s * 3.0
+    intervals = _merge_throttling_intervals(hw_df, gap_s=gap_s)
+    for t0, t1 in intervals:
+        ax.axvspan(
+            t0, t1,
+            fill=False,
+            hatch="////",
+            edgecolor=color,
+            alpha=alpha,
+            lw=0,
+            zorder=1,
+        )
     return ax
 
 

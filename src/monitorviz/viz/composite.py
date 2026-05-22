@@ -69,6 +69,7 @@ def _build_timeline_figure(
     show_throttle: bool,
     prompt_annotation: str,
     figsize: tuple[float, float],
+    hardware_period_s: float = 0.5,
 ) -> Figure:
     """Internal: lay out a strip (optional) + N hw metric panels sharing X."""
     n_hw = len(metrics)
@@ -125,15 +126,27 @@ def _build_timeline_figure(
             elif prompt_annotation == "lines":
                 plot_prompt_lines(ax, prompt_df)
 
-    # Throttle markers on every hw panel AND the strip (visible phase context)
+    # Throttle markers on every hw panel (but NOT the strip)
     if show_throttle and "throt_any_active" in hw_df.columns:
-        targets = list(axes)
-        if ax_strip is not None:
-            targets.append(ax_strip)
-        for ax in targets:
-            plot_throttle_markers(ax, hw_df)
+        for ax in axes:
+            plot_throttle_markers(ax, hw_df, hardware_period_s=hardware_period_s)
 
-    axes[-1].set_xlabel("Tiempo desde inicio del run (s)")
+    # Format x-axis: show in minutes if total duration > 1800s
+    t_max = hw_df["t_rel_s"].max() if not hw_df.empty else 0
+    if t_max > 1800:
+        x_label = "Tiempo desde inicio del run (min)"
+        for ax in axes:
+            ax.xaxis.set_major_formatter(
+                plt.FuncFormatter(lambda x, _: f"{x/60:.0f}")
+            )
+        if ax_strip is not None:
+            ax_strip.xaxis.set_major_formatter(
+                plt.FuncFormatter(lambda x, _: f"{x/60:.0f}")
+            )
+    else:
+        x_label = "Tiempo desde inicio del run (s)"
+
+    axes[-1].set_xlabel(x_label)
     return fig
 
 
@@ -151,6 +164,7 @@ def hw_timeline(
     prompt_annotation: str = "strip",
     title: str | None = None,
     figsize: tuple[float, float] | None = None,
+    hardware_period_s: float = 0.5,
 ) -> Figure:
     """Multi-panel hardware timeline with optional prompt annotations and
     throttling markers.
@@ -184,9 +198,12 @@ def hw_timeline(
         show_throttle=show_throttle,
         prompt_annotation=prompt_annotation,
         figsize=figsize,
+        hardware_period_s=hardware_period_s,
     )
     if title:
-        fig.suptitle(title, y=1.02)
+        # With constrained_layout (strip mode), let the engine place the title.
+        # Without it, nudge above the axes with y=1.02.
+        fig.suptitle(title) if use_strip else fig.suptitle(title, y=1.02)
     if not use_strip:
         fig.tight_layout()
     return fig
@@ -221,7 +238,7 @@ def inference_summary_panel(
 ) -> Figure:
     """Side-by-side bar plots of per-prompt metrics."""
     default_labels = {
-        "latency_ms": "Latencia (ms)",
+        "latency_ms": "Latencia (s)",
         "tokens_per_second": "tokens/s",
         "words_per_second": "palabras/s",
         "perplexity": "Perplejidad",
@@ -237,7 +254,13 @@ def inference_summary_panel(
         axes = [axes]
 
     for ax, m in zip(axes, metrics, strict=False):
-        plot_metric_bars(ax, prompt_df, metric=m)
+        # Convert latency from ms to seconds for display
+        if m == "latency_ms":
+            df_to_plot = prompt_df.copy()
+            df_to_plot["latency_ms"] = df_to_plot["latency_ms"] / 1000.0
+            plot_metric_bars(ax, df_to_plot, metric=m)
+        else:
+            plot_metric_bars(ax, prompt_df, metric=m)
         ax.set_ylabel(labels.get(m, m))
         ax.set_title(labels.get(m, m))
 
@@ -338,6 +361,7 @@ def memory_timeline(
     prompt_annotation: str = "strip",
     title: str | None = None,
     figsize: tuple[float, float] | None = None,
+    hardware_period_s: float = 0.5,
 ) -> Figure:
     """RAM (and optionally SWAP) usage over time."""
     if prompt_annotation not in _VALID_ANNOTATIONS:
@@ -362,9 +386,10 @@ def memory_timeline(
         show_throttle=False,
         prompt_annotation=prompt_annotation,
         figsize=figsize,
+        hardware_period_s=hardware_period_s,
     )
     if title:
-        fig.suptitle(title, y=1.02)
+        fig.suptitle(title) if use_strip else fig.suptitle(title, y=1.02)
     if not use_strip:
         fig.tight_layout()
     return fig

@@ -362,3 +362,60 @@ class TestEnergyPerToken:
         df = coll.summary_df()
         type0_row = df[df["test_type"] == "TYPE_0"]
         assert type0_row["energy_per_token_j"].isna().all()
+
+
+class TestCPUWork:
+    def test_cpu_work_full_load(self) -> None:
+        from monitorviz.transforms.aggregations import _cpu_work_effective
+        import pandas as pd
+        # 4 cores × 100% × frecuencia nominal × 20 samples × 0.5 s = 40 core·s
+        hw = pd.DataFrame({
+            "freq_mean_ghz": [2.4] * 20,
+            "cpu_usage_pct": [100.0] * 20,
+        })
+        w = _cpu_work_effective(hw, period_s=0.5, n_cores=4, f_nom_ghz=2.4)
+        assert w == pytest.approx(40.0, rel=1e-3)
+
+    def test_cpu_work_half_freq(self) -> None:
+        from monitorviz.transforms.aggregations import _cpu_work_effective
+        import pandas as pd
+        # Throttling al 50% de frecuencia → trabajo a la mitad
+        hw = pd.DataFrame({
+            "freq_mean_ghz": [1.2] * 20,
+            "cpu_usage_pct": [100.0] * 20,
+        })
+        w = _cpu_work_effective(hw, period_s=0.5, n_cores=4, f_nom_ghz=2.4)
+        assert w == pytest.approx(20.0, rel=1e-3)
+
+    def test_cpu_efficiency_full(self) -> None:
+        from monitorviz.transforms.aggregations import _cpu_efficiency
+        # 40 core·s en 10 s con 4 cores → η = 1.0
+        assert _cpu_efficiency(40.0, 10.0, n_cores=4) == pytest.approx(1.0)
+
+    def test_cpu_efficiency_half(self) -> None:
+        from monitorviz.transforms.aggregations import _cpu_efficiency
+        # 20 core·s en 10 s con 4 cores → η = 0.5
+        assert _cpu_efficiency(20.0, 10.0, n_cores=4) == pytest.approx(0.5)
+
+    def test_cpu_work_per_token(self) -> None:
+        from monitorviz.transforms.aggregations import _cpu_work_per_token
+        # 40 core·s para 100 tokens → 0.4 core·s/token
+        assert _cpu_work_per_token(40.0, 100) == pytest.approx(0.4)
+
+    def test_cpu_work_handles_none(self) -> None:
+        from monitorviz.transforms.aggregations import (
+            _cpu_efficiency,
+            _cpu_work_effective,
+            _cpu_work_per_token,
+        )
+        import pandas as pd
+        assert _cpu_work_effective(pd.DataFrame(), 0.5) is None
+        assert _cpu_efficiency(None, 10.0) is None
+        assert _cpu_work_per_token(None, 100) is None
+        assert _cpu_work_per_token(10.0, 0) is None
+
+    def test_summary_df_has_cpu_work_metrics(self) -> None:
+        coll = load_collection(FIXTURES)
+        df = coll.summary_df()
+        for col in ["cpu_work_core_s", "cpu_efficiency", "cpu_work_per_token"]:
+            assert col in df.columns

@@ -269,6 +269,61 @@ def _kv_cache_bytes(
     return batch_size * seq_length * head_dim * n_layers * n_kv_heads * 2 * 2
 
 
+def _cpu_work_effective(
+    hw_df: pd.DataFrame,
+    period_s: float,
+    *,
+    n_cores: int = 4,
+    f_nom_ghz: float = 2.4,
+) -> float | None:
+    """Effective CPU work in nominal-core-seconds (W_CPU).
+
+    W_CPU = sum over samples of:
+        (freq_mean_ghz / f_nom) * (cpu_usage_pct / 100) * n_cores * period_s
+    """
+    if hw_df.empty:
+        return None
+    freq_col = "freq_mean_ghz" if "freq_mean_ghz" in hw_df.columns else None
+    if freq_col is None or "cpu_usage_pct" not in hw_df.columns:
+        return None
+    if f_nom_ghz <= 0 or n_cores <= 0 or period_s <= 0:
+        return None
+    work = (
+        (hw_df[freq_col].clip(lower=0) / f_nom_ghz)
+        * (hw_df["cpu_usage_pct"].clip(lower=0) / 100.0)
+        * n_cores
+        * period_s
+    )
+    return float(work.sum())
+
+
+def _cpu_efficiency(
+    cpu_work_core_s: float | None,
+    duration_s: float,
+    n_cores: int = 4,
+) -> float | None:
+    """CPU efficiency η_CPU = W_CPU / (N_cores * T).
+
+    Returns a value in [0, 1] (clipped) or None if inputs invalid.
+    """
+    if cpu_work_core_s is None:
+        return None
+    if duration_s <= 0 or n_cores <= 0:
+        return None
+    eta = cpu_work_core_s / (n_cores * duration_s)
+    return float(max(0.0, min(1.0, eta)))
+
+
+def _cpu_work_per_token(
+    cpu_work_core_s: float | None,
+    n_tokens: int,
+) -> float | None:
+    """CPU work per token: core·s per token (W_token = W_CPU / N_tokens)."""
+    if cpu_work_core_s is None or n_tokens <= 0:
+        return None
+    return float(cpu_work_core_s / n_tokens)
+
+
 def _mbu_pct(
     model_info: dict | None,
     tpot_s: float | None,

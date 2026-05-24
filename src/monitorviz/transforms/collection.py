@@ -12,6 +12,9 @@ import pandas as pd
 from monitorviz.models import Run
 
 from .aggregations import (
+    _cpu_efficiency,
+    _cpu_work_effective,
+    _cpu_work_per_token,
     _mbu_pct,
     _model_size_bytes,
     hw_freq_long,
@@ -141,7 +144,11 @@ class RunCollection:
         if not self.runs:
             return pd.DataFrame()
 
-        from monitorviz.viz.style import TARGET_PEAK_MEMORY_BANDWIDTH_GBs
+        from monitorviz.viz.style import (
+            TARGET_NOMINAL_FREQ_GHZ,
+            TARGET_NUM_CORES,
+            TARGET_PEAK_MEMORY_BANDWIDTH_GBs,
+        )
 
         rows: list[dict[str, Any]] = []
         for run in self.runs:
@@ -164,6 +171,31 @@ class RunCollection:
                 seq_length=seq_len,
                 batch_size=1,
                 peak_bandwidth_gbs=TARGET_PEAK_MEMORY_BANDWIDTH_GBs,
+            )
+
+            # CPU work metrics
+            hw_r = hw_metrics_to_df(run)
+            duration_s = (
+                run.summary.timestamp_run_end_ns - run.summary.timestamp_run_start_ns
+            ) / 1e9
+            period_s = run.summary.hardware_period_s or 0.5
+            cpu_work = _cpu_work_effective(
+                hw_r, period_s=period_s,
+                n_cores=TARGET_NUM_CORES,
+                f_nom_ghz=TARGET_NOMINAL_FREQ_GHZ,
+            )
+            total_tokens = sum(
+                p.eval_count for p in run.prompts
+                if not p.is_empty_generation
+            )
+            row["cpu_work_core_s"] = cpu_work if cpu_work is not None else np.nan
+            row["cpu_efficiency"] = (
+                _cpu_efficiency(cpu_work, duration_s, n_cores=TARGET_NUM_CORES)
+                if cpu_work is not None else np.nan
+            )
+            row["cpu_work_per_token"] = (
+                _cpu_work_per_token(cpu_work, total_tokens)
+                if cpu_work is not None else np.nan
             )
 
             rows.append(row)

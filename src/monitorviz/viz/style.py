@@ -82,6 +82,14 @@ RPI5_PEAK_MEMORY_BANDWIDTH_GBs: Final[float] = 34.1
 # Change to the actual peak bandwidth of your device if different.
 TARGET_PEAK_MEMORY_BANDWIDTH_GBs: Final[float] = RPI5_PEAK_MEMORY_BANDWIDTH_GBs
 
+# RPi5 BCM2712 — frecuencia nominal y número de cores
+RPI5_NOMINAL_FREQ_GHZ: Final[float] = 2.4
+RPI5_NUM_CORES: Final[int] = 4
+
+# Defaults para cálculos de trabajo CPU efectivo
+TARGET_NOMINAL_FREQ_GHZ: Final[float] = RPI5_NOMINAL_FREQ_GHZ
+TARGET_NUM_CORES: Final[int] = RPI5_NUM_CORES
+
 
 def format_seconds(value: float, _pos: int | None = None) -> str:
     """Axis formatter: turn raw seconds into '12.3 s' style strings."""

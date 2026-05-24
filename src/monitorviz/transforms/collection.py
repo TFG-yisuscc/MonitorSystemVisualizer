@@ -12,11 +12,14 @@ import pandas as pd
 from monitorviz.models import Run
 
 from .aggregations import (
+    _compute_efficiency_per_joule,
     _cpu_efficiency,
     _cpu_work_effective,
     _cpu_work_per_token,
+    _mbu_is_upper_bound,
     _mbu_pct,
     _model_size_bytes,
+    cpu_work_by_phase,
     hw_freq_long,
     hw_metrics_to_df,
     model_display_label,
@@ -172,6 +175,7 @@ class RunCollection:
                 batch_size=1,
                 peak_bandwidth_gbs=TARGET_PEAK_MEMORY_BANDWIDTH_GBs,
             )
+            row["mbu_is_upper_bound"] = _mbu_is_upper_bound(mi)
 
             # CPU work metrics
             hw_r = hw_metrics_to_df(run)
@@ -198,8 +202,51 @@ class RunCollection:
                 if cpu_work is not None else np.nan
             )
 
+            # Energy and compute efficiency per joule
+            pwr = row.get("power_mean_w")
+            energy_total_j = (
+                float(pwr) * duration_s
+                if pwr is not None and not np.isnan(float(pwr))
+                else np.nan
+            )
+            row["energy_total_j"] = energy_total_j
+            row["cpu_work_per_joule"] = _compute_efficiency_per_joule(
+                cpu_work,
+                energy_total_j if not np.isnan(energy_total_j) else None,
+            )
+
             rows.append(row)
         return pd.DataFrame(rows)
+
+    def cpu_work_by_phase_df(
+        self,
+        *,
+        n_cores: int = 4,
+        f_nom_ghz: float = 2.4,
+    ) -> pd.DataFrame:
+        """W_CPU and η_CPU per phase, one row per (run, phase)."""
+        from monitorviz.viz.style import TARGET_NOMINAL_FREQ_GHZ, TARGET_NUM_CORES
+
+        _n_cores = n_cores or TARGET_NUM_CORES
+        _f_nom = f_nom_ghz or TARGET_NOMINAL_FREQ_GHZ
+
+        hw_full = self.hw_metrics_df()
+        dfs = []
+        for run in self.runs:
+            hw_r = hw_full[hw_full["run_id"] == run.run_id]
+            if hw_r.empty:
+                continue
+            df = cpu_work_by_phase(
+                hw_r, run, n_cores=_n_cores, f_nom_ghz=_f_nom,
+            )
+            if df.empty:
+                continue
+            df["run_id"] = run.run_id
+            df["model_label"] = model_display_label(run.model_short)
+            df["fan"] = run.meta.fan
+            dfs.append(df)
+
+        return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
     def experiment_matrix(self) -> pd.DataFrame:
         """Coverage table: count of runs per (model_short x engine x fan x accelerator).

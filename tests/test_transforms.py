@@ -419,3 +419,53 @@ class TestCPUWork:
         df = coll.summary_df()
         for col in ["cpu_work_core_s", "cpu_efficiency", "cpu_work_per_token"]:
             assert col in df.columns
+
+
+class TestCPUWorkByPhase:
+    def test_cpu_work_by_phase_returns_dataframe(self) -> None:
+        from monitorviz.transforms.aggregations import cpu_work_by_phase
+        import pandas as pd
+        run = load_run(FIXTURES / "run_ollama_type1")
+        hw = hw_metrics_to_df(run)
+        if hw.empty:
+            pytest.skip("no hw data")
+        df = cpu_work_by_phase(hw, run)
+        assert isinstance(df, pd.DataFrame)
+
+    def test_cpu_work_by_phase_columns(self) -> None:
+        from monitorviz.transforms.aggregations import cpu_work_by_phase
+        run = load_run(FIXTURES / "run_ollama_type1")
+        hw = hw_metrics_to_df(run)
+        if hw.empty:
+            pytest.skip("no hw data")
+        df = cpu_work_by_phase(hw, run)
+        if not df.empty:
+            for col in ["phase", "cpu_work_core_s", "duration_s", "cpu_efficiency"]:
+                assert col in df.columns
+
+    def test_cpu_work_by_phase_efficiency_range(self) -> None:
+        from monitorviz.transforms.aggregations import cpu_work_by_phase
+        run = load_run(FIXTURES / "run_ollama_type1")
+        hw = hw_metrics_to_df(run)
+        if hw.empty:
+            pytest.skip("no hw data")
+        df = cpu_work_by_phase(hw, run)
+        if not df.empty:
+            assert (df["cpu_efficiency"].between(0, 1)).all()
+
+    def test_compute_efficiency_per_joule(self) -> None:
+        from monitorviz.transforms.aggregations import _compute_efficiency_per_joule
+        assert _compute_efficiency_per_joule(40.0, 10.0) == pytest.approx(4.0)
+        assert _compute_efficiency_per_joule(None, 10.0) is None
+        assert _compute_efficiency_per_joule(40.0, 0.0) is None
+
+    def test_mbu_is_upper_bound_field(self) -> None:
+        coll = load_collection(FIXTURES)
+        df = coll.summary_df()
+        assert "mbu_is_upper_bound" in df.columns
+
+    def test_cpu_work_by_phase_df_collection(self) -> None:
+        import pandas as pd
+        coll = load_collection(FIXTURES)
+        df = coll.cpu_work_by_phase_df()
+        assert isinstance(df, pd.DataFrame)

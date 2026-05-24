@@ -349,6 +349,117 @@ def _mbu_pct(
     return min(achieved_gbs / peak_bandwidth_gbs * 100, 100.0)
 
 
+# Architectures that use sparse/selective activation: MBU formula assumes
+# all weights are read each step, so it overestimates real bandwidth usage.
+_SPARSE_ACTIVATION_ARCHITECTURES: frozenset[str] = frozenset(
+    {"gemma3n", "gemma3", "mixtral", "qwen_moe"}
+)
+
+
+def _mbu_is_upper_bound(model_info: dict | None) -> bool:
+    """True if the model uses sparse activation, making MBU an upper bound."""
+    if model_info is None:
+        return False
+    arch = (model_info.get("architecture") or "").lower()
+    return arch in _SPARSE_ACTIVATION_ARCHITECTURES
+
+
+def _compute_efficiency_per_joule(
+    cpu_work_core_s: float | None,
+    energy_j: float | None,
+) -> float | None:
+    """Effective CPU work per joule consumed (core·s / J).
+
+    High value = lots of compute per joule (efficient).
+    Low value = little compute per joule (throttling/idle/memory-bound).
+    """
+    if cpu_work_core_s is None or energy_j is None or energy_j <= 0:
+        return None
+    return float(cpu_work_core_s / energy_j)
+
+
+def _assign_phase(
+    t_rel_s: float,
+    phase_intervals: list[tuple[float, float, str]],
+) -> str | None:
+    """Return the phase name for a hw sample at time t_rel_s."""
+    for t0, t1, phase in phase_intervals:
+        if t0 <= t_rel_s < t1:
+            return phase
+    return None
+
+
+def cpu_work_by_phase(
+    hw_df: pd.DataFrame,
+    run: "Run",
+    *,
+    n_cores: int = 4,
+    f_nom_ghz: float = 2.4,
+) -> pd.DataFrame:
+    """W_CPU and η_CPU broken down by inference phase.
+
+    For each prompt, assigns hw samples to load/prefill/decode phases
+    based on prompt timestamps. Aggregates across all prompts.
+
+    Returns a DataFrame with columns:
+        phase, cpu_work_core_s, duration_s, cpu_efficiency, n_samples
+    """
+    if hw_df.empty:
+        return pd.DataFrame()
+
+    freq_col = "freq_mean_ghz" if "freq_mean_ghz" in hw_df.columns else None
+    if freq_col is None or "cpu_usage_pct" not in hw_df.columns:
+        return pd.DataFrame()
+
+    period_s = run.summary.hardware_period_s or 0.5
+    run_start_ns = run.summary.timestamp_run_start_ns
+
+    intervals: list[tuple[float, float, str]] = []
+    for p in run.prompts:
+        if p.is_empty_generation:
+            continue
+        t_load_start = (p.start_timestamp_ns - run_start_ns) / 1e9
+        t_prefill_start = t_load_start + p.load_duration_ns / 1e9
+        t_decode_start = t_prefill_start + p.prompt_eval_duration_ns / 1e9
+        t_decode_end = t_decode_start + p.eval_duration_ns / 1e9
+        intervals += [
+            (t_load_start,    t_prefill_start, "load"),
+            (t_prefill_start, t_decode_start,  "prefill"),
+            (t_decode_start,  t_decode_end,    "decode"),
+        ]
+
+    if not intervals:
+        return pd.DataFrame()
+
+    hw = hw_df.copy()
+    hw["phase"] = hw["t_rel_s"].apply(lambda t: _assign_phase(t, intervals))
+    hw = hw.dropna(subset=["phase"])
+
+    hw["cpu_work_sample"] = (
+        (hw[freq_col].clip(lower=0) / f_nom_ghz)
+        * (hw["cpu_usage_pct"].clip(lower=0) / 100.0)
+        * n_cores
+        * period_s
+    )
+
+    rows = []
+    for phase in ["load", "prefill", "decode"]:
+        sub = hw[hw["phase"] == phase]
+        if sub.empty:
+            continue
+        w = float(sub["cpu_work_sample"].sum())
+        dur = float(len(sub) * period_s)
+        eta = w / (n_cores * dur) if dur > 0 else float("nan")
+        rows.append({
+            "phase":           phase,
+            "cpu_work_core_s": w,
+            "duration_s":      dur,
+            "cpu_efficiency":  min(1.0, max(0.0, eta)),
+            "n_samples":       len(sub),
+        })
+
+    return pd.DataFrame(rows)
+
 
 def power_per_phase_df(run: Run) -> pd.DataFrame:
     """Compute mean power during each inference phase (load, prefill, decode).

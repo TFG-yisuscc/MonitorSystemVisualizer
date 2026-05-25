@@ -4,4 +4,18 @@
 -  ~~Separar por motores~~
 -  ~~Buscar la forma de medir el tiempo de usos  de forma analoga al personas hora o similar~~ 
 - Idem con la memoria
-- 
+- Separar en diversos notebooks los experimentos (es decir uno para E0, otro para E1...) deidirt que métricas se van a incluiren cada uno
+- - Añadir un apartado de conclusiones y discusíon al final de cada notebook
+- -  Incluir como minimo (está desordenaddo, buscar un mejor orden): 
+- -  -  Diagramas polares comparativos entre los modelos
+- -  -  Tablas comparativas entre los modelos
+- -  -  Graficas de evolución de las métricas a lo largo del tiempo 
+-  - -  Rendimiento vs arquitectura del modelo(como el en notebook4)
+- -  -  Resumen de los resultados obtenidos en cada experimento para la memoria
+- -  -  Aleratas y anomalias detectadas durante el proceso de experimentación
+- -  -  Distribución de longitud de respuesta y diagrama de pearson
+- -  -  Desglose de fases por modelos y Trade-offs multidimensionales — Frontera de Pareto
+- - - rango termico, Eficiencia computacional: trabajo CPU por julio consumido, Trabajo CPU efectivo, Energía por token
+- - - Eficiencia energética palbras y tokenes, 
+- - - Comparativa de métricas de inferencia (las tablas y graficas del notebook3)
+- -  -  las contenidasd n hardware timenline (notebook2)

@@ -1,7 +1,7 @@
-- Añadir y configurar correctamente el git submodule
+- ~~_Añadir y configurar correctamente el git submodule_~~
 - Corregir el etiquetado de las graficas en el eje x que muchas veces se solapan 
 -  Respecto al etiquetado mejorar la diferenciación entre los modelos, ya que hay algunos que aunque son el mismo, no tienen el mismo numero de parámentros
--  Separar por motores
--  Buscar la forma de medir el tiempo de usos  de forma analoga al personas hora o similar 
+-  ~~Separar por motores~~
+-  ~~Buscar la forma de medir el tiempo de usos  de forma analoga al personas hora o similar~~ 
 - Idem con la memoria
 - 

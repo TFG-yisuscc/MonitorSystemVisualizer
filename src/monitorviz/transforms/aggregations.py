@@ -33,7 +33,12 @@ _FACTOR_COLUMNS: list[str] = [
 
 # Keys are substrings matched case-insensitively; first match wins.
 _MODEL_DISPLAY_LABELS: list[tuple[str, str]] = [
+    ("deepseek-r1-distill-qwen-1.5b", "DeepSeek-R1-1.5B"),
     ("granite", "granite"),
+    ("llama-3.2-1b", "Llama-3.2-1B"),
+    ("llama-3.2-3b", "Llama-3.2-3B"),
+    ("llama3.2_1b", "Llama-3.2-1B"),
+    ("llama3.2_3b", "Llama-3.2-3B"),
     ("gemma", "gemma"),
     ("ministral", "ministral"),
     ("qwen", "qwen"),
@@ -41,25 +46,34 @@ _MODEL_DISPLAY_LABELS: list[tuple[str, str]] = [
 ]
 
 
-def model_display_label(model_short: str) -> str:
-    """Return a short one-word display label for use in plot axes and legends.
+def model_display_label(model_short: str, engine: str | None = None) -> str:
+    """Return a short display label for use in plot axes and legends.
 
     Falls back to the first 10 characters of model_short if no pattern matches.
+    If engine is provided, appends " (L)" for LLAMA or " (O)" for OLLAMA.
     """
     lower = model_short.lower()
     for key, label in _MODEL_DISPLAY_LABELS:
         if key.lower() in lower:
-            return label
-    return model_short[:10]
+            break
+    else:
+        label = model_short[:10]
+
+    if engine:
+        suffix = " (L)" if engine.upper() == "LLAMA" else (" (O)" if engine.upper() == "OLLAMA" else "")
+        label = label + suffix
+
+    return label
 
 
 def _factor_dict(run: Run) -> dict[str, Any]:
     """Build the factor block that every row inherits from its run."""
+    engine = run.summary.inference_engine
     return {
         "run_id": run.run_id,
-        "engine": run.summary.inference_engine,
+        "engine": engine,
         "model_short": run.model_short,
-        "model_label": model_display_label(run.model_short),
+        "model_label": model_display_label(run.model_short, engine),
         "test_type": run.summary.test_type,
         "batch_size": run.summary.batch_size,
         "context_size": run.summary.context_size,

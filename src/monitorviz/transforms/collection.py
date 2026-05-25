@@ -242,7 +242,7 @@ class RunCollection:
             if df.empty:
                 continue
             df["run_id"] = run.run_id
-            df["model_label"] = model_display_label(run.model_short)
+            df["model_label"] = model_display_label(run.model_short, run.summary.inference_engine)
             df["fan"] = run.meta.fan
             dfs.append(df)
 
@@ -295,11 +295,12 @@ def _factor_value(run: Run, key: str) -> Any:
 
 
 def _factor_block(run: Run) -> dict[str, Any]:
+    engine = run.summary.inference_engine
     return {
         "run_id": run.run_id,
-        "engine": run.summary.inference_engine,
+        "engine": engine,
         "model_short": run.model_short,
-        "model_label": model_display_label(run.model_short),
+        "model_label": model_display_label(run.model_short, engine),
         "test_type": run.summary.test_type,
         "batch_size": run.summary.batch_size,
         "context_size": run.summary.context_size,

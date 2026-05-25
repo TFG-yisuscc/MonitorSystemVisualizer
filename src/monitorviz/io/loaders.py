@@ -70,7 +70,10 @@ def load_collection(
     root: Path | str,
     skip_errors: bool = True,
 ) -> RunCollection:
-    """Load every run found in subdirectories of ``root``.
+    """Load every run found in subdirectories of ``root`` (recursively).
+
+    Searches for directories containing resumen.json to support both flat
+    and nested structures (e.g., Ex/timestamp and Ex/results/timestamp).
 
     With skip_errors=True (default), a run that fails to load logs a warning
     and is skipped; the rest still load. With skip_errors=False, the first
@@ -84,15 +87,25 @@ def load_collection(
         raise FileNotFoundError(f"Collection root does not exist: {root}")
 
     runs: list[Run] = []
-    for sub in sorted(root.iterdir()):
-        if not sub.is_dir():
-            continue
+
+    # Find all directories containing resumen.json (recursive search)
+    run_dirs = []
+    for candidate in sorted(root.rglob("resumen.json")):
+        run_dir = candidate.parent
+        run_dirs.append(run_dir)
+
+    # If no runs found with recursive search, fall back to direct children
+    if not run_dirs:
+        run_dirs = [sub for sub in sorted(root.iterdir()) if sub.is_dir()]
+
+    for run_dir in sorted(run_dirs):
         try:
-            runs.append(load_run(sub))
+            runs.append(load_run(run_dir))
         except Exception as e:
             if skip_errors:
-                logger.warning("Skipping run %s: %s", sub.name, e)
+                logger.warning("Skipping run %s: %s", run_dir.name, e)
             else:
                 raise
+
     logger.info("Loaded %d runs from %s", len(runs), root)
     return RunCollection(runs=runs)

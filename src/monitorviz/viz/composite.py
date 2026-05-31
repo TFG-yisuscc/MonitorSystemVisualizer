@@ -565,10 +565,14 @@ def temp_freq_dual(
     )
 
     if freq_col:
-        ax2.plot(hw_df["t_rel_s"], hw_df[freq_col],
+        freq_series = hw_df[freq_col].round(3)
+        ax2.plot(hw_df["t_rel_s"], freq_series,
                  color=COLORS["frequency"], lw=1.2, alpha=0.8, label="Freq (GHz)")
+        ax2.axhline(2.4, color=COLORS["frequency"], ls="--", lw=0.8,
+                    alpha=0.5, label="2.4 GHz nom.")
         ax2.set_ylabel("Frecuencia (GHz)", color=COLORS["frequency"])
         ax2.tick_params(axis="y", labelcolor=COLORS["frequency"])
+        ax2.set_ylim(bottom=max(0.0, freq_series.min() - 0.1), top=2.5)
         ax2.grid(False)
     else:
         ax2.set_visible(False)

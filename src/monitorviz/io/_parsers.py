@@ -158,6 +158,7 @@ def normalize_token_prob(
                 continue
             tokens.append(_parse_token_prob(item))
     elif prob_type_int == 1:
+        _invalid_prob_count = 0
         for item in parsed:
             try:
                 p = float(item)
@@ -168,10 +169,7 @@ def normalize_token_prob(
                 )
                 continue
             if p <= 0:
-                logger.warning(
-                    "Non-positive prob %s in LLAMA tokenProb (run=%s prompt=%s)",
-                    p, run_id, prompt_id,
-                )
+                _invalid_prob_count += 1
                 logprob = float("-inf")
             elif p > 1:
                 logger.warning(
@@ -182,6 +180,12 @@ def normalize_token_prob(
             else:
                 logprob = math.log(p)
             tokens.append(TokenProb(token="", logprob=logprob))
+        if _invalid_prob_count:
+            logger.warning(
+                "Non-positive prob en LLAMA tokenProb: %d tokens omitidos "
+                "(run=%s, prompt=%d). Run posiblemente corrupto.",
+                _invalid_prob_count, run_id, prompt_id,
+            )
 
     return tokens
 

@@ -170,7 +170,9 @@ _THROTTLE_FIELDS: list[str] = [
 
 def _expand_hw_sample(s: HwSample, run_start_ns: int) -> dict[str, Any]:
     """Turn one HwSample into a flat dict, expanding throttling and freq stats."""
-    freq = s.frequency_ghz
+    # Round per-core frequencies to 3 decimal places (1 MHz resolution) to
+    # suppress sub-MHz oscillator noise that pushes values like 2.400017 > 2.4.
+    freq = [round(f, 3) for f in s.frequency_ghz]
     row = {
         "timestamp_ms": s.timestamp_ms,
         "t_rel_s": (s.timestamp_ms * 1_000_000 - run_start_ns) / 1e9,

@@ -11,6 +11,7 @@ dependencies = [
     "matplotlib>=3.8",
     "seaborn>=0.13",
     "pyyaml>=6",
+    "pandas-stubs~=3.0.2",
 ]
 
 [dependency-groups]

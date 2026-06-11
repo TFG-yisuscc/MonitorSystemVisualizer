@@ -16,8 +16,10 @@ from .aggregations import (
     _cpu_efficiency,
     _cpu_work_effective,
     _cpu_work_per_token,
+    _mbu_corr_notes,
+    _mbu_corr_pct,
     _mbu_is_upper_bound,
-    _mbu_pct,
+    _mbu_naive_pct,
     _model_size_bytes,
     cpu_work_by_phase,
     hw_freq_long,
@@ -168,13 +170,18 @@ class RunCollection:
             seq_len = run.summary.context_size
             model_bytes = _model_size_bytes(mi)
             row["model_size_gb"] = model_bytes / 1e9 if model_bytes is not None else np.nan
-            row["mbu_pct"] = _mbu_pct(
-                mi,
-                tpot,
+
+            _mbu_kwargs = dict(
+                tpot_s=tpot,
                 seq_length=seq_len,
                 batch_size=1,
                 peak_bandwidth_gbs=TARGET_PEAK_MEMORY_BANDWIDTH_GBs,
             )
+            row["mbu_naive"] = _mbu_naive_pct(mi, **_mbu_kwargs)
+            row["mbu_corr"] = _mbu_corr_pct(mi, **_mbu_kwargs)
+            row["mbu_corr_notes"] = _mbu_corr_notes(mi)
+            # Alias for backward compatibility with existing notebooks.
+            row["mbu_pct"] = row["mbu_corr"]
             row["mbu_is_upper_bound"] = _mbu_is_upper_bound(mi)
 
             # CPU work metrics

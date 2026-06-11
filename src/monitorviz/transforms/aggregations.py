@@ -258,6 +258,7 @@ def _kv_cache_bytes(
     model_info: dict | None,
     seq_length: int,
     batch_size: int = 1,
+    n_attn_layers: int | None = None,
 ) -> float | None:
     """KV cache size in bytes for a given sequence length.
 
@@ -265,6 +266,12 @@ def _kv_cache_bytes(
         KV_Cache = seq_length x n_layers x n_kv_heads x head_dim x 2 (K+V) x 2 (fp16 bytes)
 
     head_dim = embedding_length / n_heads
+
+    Args:
+        n_attn_layers: Override the number of attention layers. If None,
+            uses model_info["n_layers"] (all layers are treated as attention
+            layers, which is correct for dense models). For SSM hybrids,
+            pass L_total - L_ssm to restrict the KV cache to attention layers.
     """
     if model_info is None:
         return None
@@ -275,7 +282,7 @@ def _kv_cache_bytes(
     if any(v is None for v in [n_layers, n_kv_heads, embedding_length, n_heads]):
         return None
     try:
-        n_layers = int(n_layers)
+        n_layers = int(n_attn_layers) if n_attn_layers is not None else int(n_layers)
         n_kv_heads = int(n_kv_heads)
         embedding_length = int(embedding_length)
         n_heads = int(n_heads)
@@ -340,20 +347,17 @@ def _cpu_work_per_token(
     return float(cpu_work_core_s / n_tokens)
 
 
-def _mbu_pct(
+def _mbu_naive_pct(
     model_info: dict | None,
     tpot_s: float | None,
     seq_length: int,
     batch_size: int = 1,
-    peak_bandwidth_gbs: float = 34.1,
+    peak_bandwidth_gbs: float = 17.1,
 ) -> float | None:
-    """Model Bandwidth Utilization (%) as defined in ELIB paper.
+    """Naïve MBU (%) as defined in ELIB paper — dense-model assumption.
 
-    Args:
-        tpot_s: Time Per Output Token in seconds (eval_duration_s / eval_count).
-        seq_length: Average sequence length during decode.
-        batch_size: Batch size used during inference.
-        peak_bandwidth_gbs: Peak memory bandwidth of the target device in GB/s.
+    Assumes all layers are attention layers and M_state=0. For non-dense
+    architectures use _mbu_corr_pct instead.
     """
     if tpot_s is None or tpot_s <= 0 or model_info is None:
         return None
@@ -365,11 +369,143 @@ def _mbu_pct(
     return min(achieved_gbs / peak_bandwidth_gbs * 100, 100.0)
 
 
-# Architectures that use sparse/selective activation: MBU formula assumes
-# all weights are read each step, so it overestimates real bandwidth usage.
+# ---------------------------------------------------------------------------
+# MBU_corr: architecture-aware correction for SSM hybrids and sparse models
+# ---------------------------------------------------------------------------
+
+# Granite 4.0-H-Micro: hybrid Mamba-2 + Transformer (verified from GGUF)
+#   ssm_a, ssm_d, ssm_conv1d, ssm_dt tensors kept in f32 regardless of quant.
+#   M_state is the SSM recurrent state that must be read each decode step,
+#   equivalent to the KV cache for attention layers.
+_GRANITE_SSM_N_SSM_LAYERS: int = 36
+_GRANITE_SSM_STATE_BYTES: float = 74.4 * 1024 ** 2  # 74.4 MiB fixed
+
+# Architectures that use sparse/selective activation: naïve MBU overestimates.
 _SPARSE_ACTIVATION_ARCHITECTURES: frozenset[str] = frozenset(
     {"gemma3n", "gemma3", "mixtral", "qwen_moe"}
 )
+
+# Known Gemma 3n (MatFormer) active parameter counts.
+# During decode only N_params_act weights are streamed; M_model must use this.
+# Key: N_params upper-bound threshold that identifies the variant.
+# Value: verified N_params_act (source: user measurement / model card).
+_GEMMA3N_PARAMS_ACT_BY_SIZE: list[tuple[float, int]] = [
+    (2.5e9, 1_910_000_000),  # E2B: total ~2B, active 1.910B (verificado)
+]
+
+
+def _gemma3n_n_params_act(model_info: dict) -> int | None:
+    """Return known N_params_act for a Gemma 3n variant, or None if unknown."""
+    n_params = model_info.get("n_params")
+    if n_params is None:
+        return None
+    n = int(n_params)
+    for threshold, n_act in _GEMMA3N_PARAMS_ACT_BY_SIZE:
+        if n <= threshold:
+            return n_act
+    return None
+
+
+def _is_granite_ssm_hybrid(model_info: dict | None) -> bool:
+    """True if model_info describes a Granite SSM+Transformer hybrid."""
+    if model_info is None:
+        return False
+    # Prefer explicit field set by the annotation pipeline.
+    if model_info.get("n_ssm_layers", 0):
+        return True
+    arch = (model_info.get("architecture") or "").lower()
+    if "granite" in arch and ("mamba" in arch or "ssm" in arch or "hybrid" in arch):
+        return True
+    # Fallback: check model name stored in model_info.
+    name = (model_info.get("name") or model_info.get("model_name") or "").lower()
+    return "granite" in name and ("-h-" in name or "hybrid" in name or "mamba" in name)
+
+
+def _is_gemma3n(model_info: dict | None) -> bool:
+    """True if model_info describes a Gemma 3n (MatFormer) architecture."""
+    if model_info is None:
+        return False
+    arch = (model_info.get("architecture") or "").lower()
+    return arch == "gemma3n"
+
+
+def _mbu_corr_notes(model_info: dict | None) -> str:
+    """Human-readable note explaining the MBU_corr computation path used."""
+    if model_info is None:
+        return "no model_info"
+    if _is_granite_ssm_hybrid(model_info):
+        n_ssm = model_info.get("n_ssm_layers", _GRANITE_SSM_N_SSM_LAYERS)
+        return (
+            f"Granite SSM hybrid: M_state={_GRANITE_SSM_STATE_BYTES/1024**2:.1f} MiB, "
+            f"L_ssm={n_ssm}, KV cache computed over L_attn=L_total-{n_ssm} layers"
+        )
+    if _is_gemma3n(model_info):
+        n_params_act = _gemma3n_n_params_act(model_info)
+        if n_params_act is not None:
+            return (
+                f"Gemma 3n MatFormer: N_params_act={n_params_act/1e9:.3f}B "
+                f"(verificado, E2B) — M_model usa N_params_act"
+            )
+        return (
+            "Gemma 3n MatFormer: N_params_act desconocido — usando N_params "
+            "como cota superior; MBU_corr puede estar sobreestimado"
+        )
+    return "dense"
+
+
+def _mbu_corr_pct(
+    model_info: dict | None,
+    tpot_s: float | None,
+    seq_length: int,
+    batch_size: int = 1,
+    peak_bandwidth_gbs: float = 17.1,
+) -> float | None:
+    """Architecture-corrected MBU (%).
+
+    Formula:
+        MBU_corr = (M_model + M_KV_attn + M_state) / (TPOT * BW_peak) * 100
+
+    For dense models (M_state=0, L_attn=L_total) this is identical to the
+    naïve ELIB formula. For Granite SSM hybrids, M_state accounts for the
+    recurrent state that must be streamed each decode step, and M_KV_attn
+    only covers the attention (non-SSM) layers.
+    """
+    if tpot_s is None or tpot_s <= 0 or model_info is None:
+        return None
+
+    model_bytes = _model_size_bytes(model_info)
+    if model_bytes is None:
+        return None
+
+    if _is_granite_ssm_hybrid(model_info):
+        n_ssm = int(model_info.get("n_ssm_layers", _GRANITE_SSM_N_SSM_LAYERS))
+        n_total = model_info.get("n_layers")
+        if n_total is None:
+            return None
+        n_attn = max(0, int(n_total) - n_ssm)
+        kv_bytes = _kv_cache_bytes(model_info, seq_length, batch_size, n_attn_layers=n_attn)
+        m_state = _GRANITE_SSM_STATE_BYTES
+    elif _is_gemma3n(model_info):
+        # MatFormer: only N_params_act weights are streamed per decode step.
+        n_params_act = _gemma3n_n_params_act(model_info)
+        if n_params_act is not None:
+            bpw = model_info.get("bits_per_weight")
+            if bpw is None:
+                quant = (model_info.get("quantization") or "").upper()
+                bpw = _GGUF_BPW.get(quant)
+            if bpw is not None:
+                model_bytes = int(n_params_act) * float(bpw) / 8.0
+        kv_bytes = _kv_cache_bytes(model_info, seq_length, batch_size)
+        m_state = 0.0
+    else:
+        kv_bytes = _kv_cache_bytes(model_info, seq_length, batch_size)
+        m_state = 0.0
+
+    if kv_bytes is None:
+        return None
+
+    achieved_gbs = (model_bytes + kv_bytes + m_state) / tpot_s / 1e9
+    return min(achieved_gbs / peak_bandwidth_gbs * 100, 100.0)
 
 
 def _mbu_is_upper_bound(model_info: dict | None) -> bool:

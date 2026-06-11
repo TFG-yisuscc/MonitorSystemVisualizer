@@ -1032,14 +1032,14 @@ def correlation_heatmap(
         "power_mean_w":        "W_med",
         "power_max_w":         "W_máx",
         "energy_per_token_j":  "J/tok",
-        "mbu_pct":             "MBU",
+        "mbu_corr":            "MBU_corr",
         "throttled_ratio":     "throttle",
     }
     default_cols = [
         "tokens_per_s_mean", "ttft_ms_mean", "latency_ms_mean",
         "perplexity_geomean", "temp_max_c", "temp_mean_c",
         "power_mean_w", "power_max_w", "energy_per_token_j",
-        "mbu_pct", "throttled_ratio",
+        "mbu_corr", "throttled_ratio",
     ]
     use_cols = cols or [c for c in default_cols if c in summary_df.columns]
     data = summary_df[use_cols].dropna(how="all")

@@ -73,10 +73,10 @@ def get_engine_color(engine: str) -> str:
 
 # --- Hardware constants ---------------------------------------------------
 
-# Raspberry Pi 5 (BCM2712, LPDDR4X-4267, 64-bit bus)
-# Peak memory bandwidth = 4267 MT/s x 8 bytes x 1 channel = 34.1 GB/s
-# Source: BCM2712 datasheet / RPi5 official specs
-RPI5_PEAK_MEMORY_BANDWIDTH_GBs: Final[float] = 34.1
+# Raspberry Pi 5 (BCM2712, LPDDR4X-4267, 32-bit bus)
+# Peak memory bandwidth = 4267 MT/s x 4 bytes x 1 channel ≈ 17.1 GB/s
+# Source: https://www.raspberrypi.com/documentation/computers/processors.html
+RPI5_PEAK_MEMORY_BANDWIDTH_GBs: Final[float] = 17.1
 
 # Default target platform for MBU calculations.
 # Change to the actual peak bandwidth of your device if different.

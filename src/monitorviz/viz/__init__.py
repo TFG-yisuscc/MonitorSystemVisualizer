@@ -31,6 +31,11 @@ from .primitives import (
     plot_prompt_spans,
     plot_throttle_markers,
 )
+from .methodology import (
+    plot_experiment_matrix,
+    plot_fom_diagram,
+    plot_monitor_architecture,
+)
 from .style import (
     COLORS,
     ENGINE_COLORS,
@@ -49,6 +54,9 @@ from .style import (
 __all__ = [
     "COLORS",
     "ENGINE_COLORS",
+    "plot_experiment_matrix",
+    "plot_fom_diagram",
+    "plot_monitor_architecture",
     "MODEL_PALETTE",
     "RPI5_NOMINAL_FREQ_GHZ",
     "RPI5_NUM_CORES",

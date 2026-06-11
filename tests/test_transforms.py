@@ -306,17 +306,17 @@ class TestMBU:
         assert 110e6 < kv < 120e6
 
     def test_mbu_pct_range(self):
-        from monitorviz.transforms.aggregations import _mbu_pct
+        from monitorviz.transforms.aggregations import _mbu_corr_pct
         mi = {"n_params": 1_777_088_000, "bits_per_weight": 5.0,
               "n_layers": 28, "n_kv_heads": 2, "embedding_length": 1536, "n_heads": 12}
         # batch_size=512 makes KV cache large → achieved BW > peak → capped at 100%
-        mbu = _mbu_pct(mi, tpot_s=0.6, seq_length=4096, batch_size=512)
+        mbu = _mbu_corr_pct(mi, tpot_s=0.6, seq_length=4096, batch_size=512)
         assert mbu is not None
         assert 0 < mbu <= 100
 
     def test_mbu_none_without_model_info(self):
-        from monitorviz.transforms.aggregations import _mbu_pct
-        assert _mbu_pct(None, 0.6, 4096) is None
+        from monitorviz.transforms.aggregations import _mbu_corr_pct
+        assert _mbu_corr_pct(None, 0.6, 4096) is None
 
 
 

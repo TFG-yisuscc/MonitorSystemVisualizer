@@ -16,6 +16,8 @@ from .aggregations import (
     _cpu_efficiency,
     _cpu_work_effective,
     _cpu_work_per_token,
+    _gemma3n_n_params_act,
+    _is_gemma3n,
     _mbu_corr_notes,
     _mbu_corr_pct,
     _mbu_is_upper_bound,
@@ -165,11 +167,37 @@ class RunCollection:
             pwr = row.get("power_mean_w")
             row["energy_per_token_j"] = pwr / tps if (tps and pwr and tps > 0) else np.nan
 
+            # For HAILO_OLLAMA runs with external smart-plug measurements, override
+            # energy_per_token_j: vcgencmd doesn't capture the Hailo chip's power draw.
+            # total_kwh is used as-is (idle assumed identical across runs, cancels in
+            # comparisons; no subtraction performed).
+            s = run.summary
+            if s.inference_engine == "HAILO_OLLAMA" and s.total_kwh is not None:
+                _E_total_j = s.total_kwh * 3_600_000
+                _n_tokens  = sum(
+                    p.eval_count for p in run.prompts if not p.is_empty_generation
+                )
+                row["energy_per_token_j"] = (
+                    _E_total_j / _n_tokens if _n_tokens > 0 else np.nan
+                )
+                if s.watt_max is not None:
+                    row["power_max_w"] = s.watt_max
+
             mi = run.summary.model_info
             tpot = row.get("tpot_mean_s")
             seq_len = run.summary.context_size
             model_bytes = _model_size_bytes(mi)
             row["model_size_gb"] = model_bytes / 1e9 if model_bytes is not None else np.nan
+
+            # n_params: for sparse-activation models (Gemma 3n MatFormer) use
+            # N_params_act (active params) as N in the FoM formula, since only
+            # those weights are streamed and computed per decode step.
+            _n_raw = (mi.get("n_params") if mi else None)
+            if _n_raw is not None and _is_gemma3n(mi):
+                _n_act = _gemma3n_n_params_act(mi)
+                row["n_params"] = float(_n_act if _n_act is not None else _n_raw)
+            elif _n_raw is not None:
+                row["n_params"] = float(_n_raw)
 
             _mbu_kwargs = dict(
                 tpot_s=tpot,
@@ -339,7 +367,7 @@ def _prompt_aggregates(run: Run) -> dict[str, Any]:
     )
     tpot_series = pd.Series(
         [
-            p.eval_duration_ns / p.eval_count / 1e9
+            p._effective_eval_duration_ns / p.eval_count / 1e9
             if not p.is_empty_generation and p.eval_count > 0
             else np.nan
             for p in run.prompts

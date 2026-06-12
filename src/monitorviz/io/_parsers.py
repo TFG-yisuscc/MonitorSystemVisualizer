@@ -71,6 +71,9 @@ def parse_resumen(path: Path) -> RunSummary:
         hardware_period_s=hardware_period_s,
         annotations=annotations,
         model_info=model_info,
+        total_kwh=raw.get("total_kwh"),
+        watt_min=raw.get("watt_min"),
+        watt_max=raw.get("watt_max"),
         raw_resumen=raw,
         raw_og_config=og_config,
     )

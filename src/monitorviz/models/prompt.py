@@ -20,7 +20,7 @@ class TokenProb(BaseModel):
 class PromptMetric(BaseModel):
     """A single inference event (one prompt -> one response)."""
 
-    engine: Literal["OLLAMA", "LLAMA"]
+    engine: Literal["OLLAMA", "LLAMA", "HAILO_OLLAMA"]
     prob_type: int | str = Field(alias="probType")
     model: str
     prompt_id: int
@@ -56,6 +56,19 @@ class PromptMetric(BaseModel):
         }
         return _MAP.get(self.prob_type, 0)
 
+    @property
+    def _effective_eval_duration_ns(self) -> int:
+        """Eval duration, falling back to total_duration_ns for HAILO_OLLAMA.
+
+        Hailo reports eval_duration_ns=0; the wall-clock decode time is
+        captured in total_duration_ns instead.
+        """
+        if self.eval_duration_ns > 0:
+            return self.eval_duration_ns
+        if self.engine == "HAILO_OLLAMA" and self.total_duration_ns > 0:
+            return self.total_duration_ns
+        return 0
+
     @computed_field
     @property
     def is_empty_generation(self) -> bool:
@@ -66,7 +79,7 @@ class PromptMetric(BaseModel):
         """
         return (
             self.eval_count <= 1
-            or self.eval_duration_ns <= 0
+            or self._effective_eval_duration_ns <= 0
             or not self.answer.strip()
         )
 
@@ -91,7 +104,7 @@ class PromptMetric(BaseModel):
     def tokens_per_second(self) -> float | None:
         if self.is_empty_generation:
             return None
-        return self.eval_count / (self.eval_duration_ns / 1e9)
+        return self.eval_count / (self._effective_eval_duration_ns / 1e9)
 
     @computed_field
     @property
@@ -101,4 +114,4 @@ class PromptMetric(BaseModel):
         n_words = len(self.answer.split())
         if n_words == 0:
             return None
-        return n_words / (self.eval_duration_ns / 1e9)
+        return n_words / (self._effective_eval_duration_ns / 1e9)

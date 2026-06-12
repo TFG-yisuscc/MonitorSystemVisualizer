@@ -34,11 +34,15 @@ _FACTOR_COLUMNS: list[str] = [
 # Keys are substrings matched case-insensitively; first match wins.
 _MODEL_DISPLAY_LABELS: list[tuple[str, str]] = [
     ("deepseek-r1-distill-qwen-1.5b", "DeepSeek-R1-1.5B"),
+    ("deepseek_r1_distill_qwen",      "DeepSeek-R1-1.5B"),  # Hailo/Ollama variant
+    ("deepseek-r1:1.5b",              "DeepSeek-R1-1.5B"),
     ("granite", "granite"),
     ("llama-3.2-1b", "Llama-3.2-1B"),
     ("llama-3.2-3b", "Llama-3.2-3B"),
-    ("llama3.2_1b", "Llama-3.2-1B"),
-    ("llama3.2_3b", "Llama-3.2-3B"),
+    ("llama3.2_1b",  "Llama-3.2-1B"),
+    ("llama3.2_3b",  "Llama-3.2-3B"),
+    ("llama3.2:1b",  "Llama-3.2-1B"),  # Hailo/Ollama variant
+    ("llama3.2:3b",  "Llama-3.2-3B"),  # Hailo/Ollama variant
     ("gemma", "gemma"),
     ("ministral", "ministral"),
     ("qwen", "qwen"),
@@ -60,7 +64,14 @@ def model_display_label(model_short: str, engine: str | None = None) -> str:
         label = model_short[:10]
 
     if engine:
-        suffix = " (L)" if engine.upper() == "LLAMA" else (" (O)" if engine.upper() == "OLLAMA" else "")
+        if engine.upper() == "LLAMA":
+            suffix = " (L)"
+        elif engine.upper() == "OLLAMA":
+            suffix = " (O)"
+        elif engine.upper() == "HAILO_OLLAMA":
+            suffix = " (H)"
+        else:
+            suffix = ""
         label = label + suffix
 
     return label
@@ -390,7 +401,9 @@ _SPARSE_ACTIVATION_ARCHITECTURES: frozenset[str] = frozenset(
 # Key: N_params upper-bound threshold that identifies the variant.
 # Value: verified N_params_act (source: user measurement / model card).
 _GEMMA3N_PARAMS_ACT_BY_SIZE: list[tuple[float, int]] = [
-    (2.5e9, 1_910_000_000),  # E2B: total ~2B, active 1.910B (verificado)
+    # (threshold_total, n_params_act)
+    # E2B: model file reports ~4.46 B total ("4.5B-3n-E2B"), active = 1.910 B (verificado)
+    (5e9, 1_910_000_000),
 ]
 
 

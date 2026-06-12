@@ -14,7 +14,7 @@ class RunSummary(BaseModel):
 
     timestamp_run_start_ns: int
     timestamp_run_end_ns: int
-    inference_engine: Literal["OLLAMA", "LLAMA"]
+    inference_engine: Literal["OLLAMA", "LLAMA", "HAILO_OLLAMA"]
     model_path_or_name: str
     test_type: Literal["TYPE_0", "TYPE_1", "TYPE_2"]
     batch_size: int
@@ -25,6 +25,11 @@ class RunSummary(BaseModel):
     hardware_period_s: float
     annotations: str = ""
     model_info: dict | None = None
+    # External power-meter fields (HAILO_OLLAMA only): measured from power-on
+    # (5-min idle baseline + full inference run) by an external smart-plug.
+    total_kwh: float | None = None   # total energy in kWh
+    watt_min: float | None = None    # minimum system power (W), used as idle baseline
+    watt_max: float | None = None    # peak system power (W) during the run
     raw_resumen: dict
     raw_og_config: dict
 
@@ -55,4 +60,4 @@ class Run(BaseModel):
         name = self.summary.model_path_or_name
         if self.summary.inference_engine == "LLAMA":
             return Path(name).stem.replace(".gguf", "")
-        return name
+        return name  # OLLAMA and HAILO_OLLAMA use the model name as-is

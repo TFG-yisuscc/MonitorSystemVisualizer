@@ -1,5 +1,7 @@
 # monitorviz
 
+> [English version](README.en.md)
+
 Visualizador de métricas para los datos producidos por
 [MonitorSystemCplusplus](https://github.com/TFG-yisuscc/MonitorSystemCplusplus),
 parte de mi TFG.
@@ -38,4 +40,37 @@ data/             submódulo con runs (TFG-DATA)
 
 ## Uso
 
-(Pendiente: se rellena tras implementar loaders y notebooks.)
+### Lanzar JupyterLab
+
+```bash
+uv run jupyter lab
+```
+
+### Notebooks
+
+Los notebooks están en `notebooks/`. Los experimentos principales (06–12) están en la raíz:
+
+| Notebook | Contenido |
+|---|---|
+| `06_E0_baseline.ipynb` | Experimento E0 — baseline (fan activo/pasivo) |
+| `07_E1_cuantizacion.ipynb` | Experimento E1 — cuantización |
+| `08_E2_contexto.ipynb` | Experimento E2 — tamaño de contexto |
+| `09_E3_batch.ipynb` | Experimento E3 — batch size |
+| `10_E4_engine.ipynb` | Experimento E4 — OLLAMA vs llama.cpp |
+| `11_E5_hailo.ipynb` | Experimento E5 — acelerador Hailo |
+| `12_perplejidad.ipynb` | Análisis de perplejidad |
+> La subseccióbn de anexos en estos notebooks incluye intentos de gráficas que no se visualizan correctamente o que carecen de relevancia, se recomienda ignorarlas,
+
+Los notebooks de soporte y exploración que se han utilizado para comprender el funcionamiento y peculiaridades de los LLM están en `notebooks/secundarios/`:
+
+| Notebook | Contenido |
+|---|---|
+| `00_metodologia.ipynb` | Diagramas y figuras metodológicas del TFG |
+| `01_exploracion_run.ipynb` | Exploración detallada de un run individual |
+| `02_hardware_timeline.ipynb` | Series temporales de hardware (temperatura, potencia…) |
+| `03_inferencia_metricas.ipynb` | Comparativa de métricas de inferencia entre modelos |
+| `04_comparativa_global.ipynb` | Comparativa global entre experimentos |
+| `05_experimentos_parametricos.ipynb` | Análisis paramétrico (contexto, batch, cuantización) |
+
+Todos los notebooks detectan automáticamente la raíz del proyecto independientemente de desde dónde se lancen (`notebooks/` o `notebooks/secundarios/`).
+> Los notebooks secundarios se emplearon en un subconjunto reducido, de usar el dataset completo, pueden tardar mucho por lo que se desaconseja su uso. Además pueden contener errores o visualizaciones incorrectas.

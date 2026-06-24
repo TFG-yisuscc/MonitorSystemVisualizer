@@ -167,12 +167,19 @@ class RunCollection:
             pwr = row.get("power_mean_w")
             row["energy_per_token_j"] = pwr / tps if (tps and pwr and tps > 0) else np.nan
 
-            # For HAILO_OLLAMA runs with external smart-plug measurements, override
-            # energy_per_token_j: vcgencmd doesn't capture the Hailo chip's power draw.
-            # total_kwh is used as-is (idle assumed identical across runs, cancels in
-            # comparisons; no subtraction performed).
             s = run.summary
-            if s.inference_engine == "HAILO_OLLAMA" and s.total_kwh is not None:
+            # Expose raw wattmeter readings whenever present (any engine).
+            row["watt_min_w"] = float(s.watt_min) if s.watt_min is not None else np.nan
+            row["watt_max_w"] = float(s.watt_max) if s.watt_max is not None else np.nan
+            # watt_max is total-system peak power; always preferred over vcgencmd.
+            if s.watt_max is not None:
+                row["power_max_w"] = s.watt_max
+
+            # When wattmeter data is present, use it for energy_per_token_j so that
+            # all runs (CPU and Hailo) are comparable on the same measurement basis.
+            # WARNING: total_kwh includes ~5 min idle + device startup outside the
+            # inference window — energy_per_token_j is an upper bound, not exact.
+            if s.total_kwh is not None:
                 _E_total_j = s.total_kwh * 3_600_000
                 _n_tokens  = sum(
                     p.eval_count for p in run.prompts if not p.is_empty_generation
@@ -180,8 +187,6 @@ class RunCollection:
                 row["energy_per_token_j"] = (
                     _E_total_j / _n_tokens if _n_tokens > 0 else np.nan
                 )
-                if s.watt_max is not None:
-                    row["power_max_w"] = s.watt_max
 
             mi = run.summary.model_info
             tpot = row.get("tpot_mean_s")

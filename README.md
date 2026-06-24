@@ -73,4 +73,6 @@ Los notebooks de soporte y exploración que se han utilizado para comprender el 
 | `05_experimentos_parametricos.ipynb` | Análisis paramétrico (contexto, batch, cuantización) |
 
 Todos los notebooks detectan automáticamente la raíz del proyecto independientemente de desde dónde se lancen (`notebooks/` o `notebooks/secundarios/`).
+
+> **Nota sobre mayúsculas:** el submódulo git clona el directorio de datos como `tfg-data` (minúsculas), mientras que los notebooks esperan `TFG-DATA`. Si es necesario, ajusta el nombre en la celda de configuración de cada notebook.
 > Los notebooks secundarios se emplearon en un subconjunto reducido, de usar el dataset completo, pueden tardar mucho por lo que se desaconseja su uso. Además pueden contener errores o visualizaciones incorrectas.

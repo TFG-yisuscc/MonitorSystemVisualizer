@@ -75,4 +75,6 @@ Support and exploratory notebooks used to understand LLM behaviour and quirks ar
 
 All notebooks automatically detect the project root regardless of where they are launched from (`notebooks/` or `notebooks/secundarios/`).
 
+> **Case sensitivity note:** the git submodule checks out the data directory as `tfg-data` (lowercase), while the notebooks expect `TFG-DATA`. If needed, update the name in the configuration cell of each notebook.
+
 > Secondary notebooks were run on a reduced subset of the data. Running them on the full dataset may take a long time and is not recommended. They may also contain errors or incorrect visualisations.

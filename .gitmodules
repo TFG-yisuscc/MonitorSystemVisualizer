@@ -1,3 +1,6 @@
 [submodule "data/tfg-data"]
 	path = data/tfg-data
 	url = git@github.com:TFG-yisuscc/TFG-DATA.git
+[submodule "data/TFG-DATA"]
+	path = data/TFG-DATA
+	url = git@github.com:TFG-yisuscc/TFG-DATA.git

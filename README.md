@@ -1,46 +1,62 @@
 # monitorviz
 
-> [English version](README.en.md)
+> [Versión en español](README.es.md)
 
-Visualizador de métricas para los datos producidos por
+Metrics visualizer for data produced by
 [MonitorSystemCplusplus](https://github.com/TFG-yisuscc/MonitorSystemCplusplus),
-parte de mi TFG.
+part of my Bachelor's thesis (TFG).
 
-## Instalación
+## Installation
 
 ```bash
-git clone <url-del-repo> visualizador-tfg
+git clone <repo-url> visualizador-tfg
 cd visualizador-tfg
 git submodule add git@github.com:TFG-yisuscc/TFG-DATA.git data
 git submodule update --init --recursive
 uv sync
 ```
 
-## Configuración en PyCharm
+## PyCharm setup
 
 1. File > Settings > Project > Python Interpreter
 2. Add Interpreter > Add Local Interpreter > Select existing
-3. Selecciona la ruta: `<proyecto>/.venv/bin/python`
-   (en Windows: `<proyecto>\.venv\Scripts\python.exe`)
+3. Select the path: `<project>/.venv/bin/python`
+   (on Windows: `<project>\.venv\Scripts\python.exe`)
 
-En PyCharm 2024.3.2+ también puedes elegir el tipo "uv" directamente.
+In PyCharm 2024.3.2+ you can also choose the "uv" interpreter type directly.
 
-## Estructura
+## Structure
 
 ```
-src/monitorviz/   código del paquete
-  models/         modelos pydantic
-  io/             lectura de runs
-  transforms/     cálculos derivados y agregaciones
-  viz/            helpers de plotting
-tests/            tests + fixtures
-notebooks/        análisis ejecutables
-data/             submódulo con runs (TFG-DATA)
+.
+├── src/monitorviz/        Package source
+│   ├── models/             Pydantic models (hw, meta, prompt, run)
+│   ├── io/                 Run discovery, loaders and parsers
+│   ├── transforms/         Derived metrics, aggregations and FoM
+│   └── viz/                Plotting primitives, composite figures and style
+├── tests/                  Pytest suite
+│   └── fixtures/           Sample runs used by the tests
+├── notebooks/              Executable analyses
+│   ├── 06..12_*.ipynb       Main experiment notebooks (E0-E5, perplexity)
+│   ├── secundarios/         Exploratory/support notebooks (00-05)
+│   └── figures/              Chart images exported from the notebooks
+└── data/                   Git submodule (TFG-DATA) with the raw runs
+    ├── E0-FAN/ E0-NOFAN/    Baseline experiment (fan on/off)
+    ├── E1/                  Quantization experiment
+    ├── E2/                  Context-size experiment
+    ├── E3/                  Batch-size experiment
+    ├── E5/                  Hailo accelerator experiment
+    └── Perplejidad/         Perplexity experiment
 ```
 
-## Uso
+- **`src/monitorviz/`** — the installable package. `models/` defines the pydantic schemas for a run's metadata, prompts and hardware samples; `io/` discovers and parses run directories on disk; `transforms/` turns raw samples into derived metrics, aggregations and figures of merit (FoM); `viz/` holds the reusable plotting helpers the notebooks call into.
+- **`tests/`** — unit tests for the package, with `fixtures/` holding small synthetic runs (different formats: llama.cpp, OLLAMA, with/without hardware metrics, with/without `meta.yaml`) used to exercise the loaders without needing the full dataset.
+- **`notebooks/`** — all analysis notebooks. The numbered notebooks at the root (06-12) are the main thesis experiments; `secundarios/` holds earlier exploratory notebooks and the methodology figures; `figures/` collects exported PNGs referenced by the write-up.
+- **`data/`** — a git submodule pointing at [TFG-DATA](https://github.com/TFG-yisuscc/TFG-DATA), containing the raw runs produced by MonitorSystemCplusplus, one subfolder per experiment.
 
-### Lanzar JupyterLab
+## Usage
+
+### Launch JupyterLab
 
 ```bash
 uv run jupyter lab
@@ -48,31 +64,33 @@ uv run jupyter lab
 
 ### Notebooks
 
-Los notebooks están en `notebooks/`. Los experimentos principales (06–12) están en la raíz:
+Notebooks live in `notebooks/`. The main experiment notebooks (06–12) are at the root:
 
-| Notebook | Contenido |
+| Notebook | Contents |
 |---|---|
-| `06_E0_baseline.ipynb` | Experimento E0 — baseline (fan activo/pasivo) |
-| `07_E1_cuantizacion.ipynb` | Experimento E1 — cuantización |
-| `08_E2_contexto.ipynb` | Experimento E2 — tamaño de contexto |
-| `09_E3_batch.ipynb` | Experimento E3 — batch size |
-| `10_E4_engine.ipynb` | Experimento E4 — OLLAMA vs llama.cpp |
-| `11_E5_hailo.ipynb` | Experimento E5 — acelerador Hailo |
-| `12_perplejidad.ipynb` | Análisis de perplejidad |
-> La subseccióbn de anexos en estos notebooks incluye intentos de gráficas que no se visualizan correctamente o que carecen de relevancia, se recomienda ignorarlas,
+| `06_E0_baseline.ipynb` | Experiment E0 — baseline (fan on/off) |
+| `07_E1_cuantizacion.ipynb` | Experiment E1 — quantization |
+| `08_E2_contexto.ipynb` | Experiment E2 — context size |
+| `09_E3_batch.ipynb` | Experiment E3 — batch size |
+| `10_E4_engine.ipynb` | Experiment E4 — OLLAMA vs llama.cpp |
+| `11_E5_hailo.ipynb` | Experiment E5 — Hailo accelerator |
+| `12_perplejidad.ipynb` | Perplexity analysis |
 
-Los notebooks de soporte y exploración que se han utilizado para comprender el funcionamiento y peculiaridades de los LLM están en `notebooks/secundarios/`:
+> The annex subsections in these notebooks contain chart drafts that either render incorrectly or lack relevance — they can safely be ignored.
 
-| Notebook | Contenido |
+Support and exploratory notebooks used to understand LLM behaviour and quirks are in `notebooks/secundarios/`:
+
+| Notebook | Contents |
 |---|---|
-| `00_metodologia.ipynb` | Diagramas y figuras metodológicas del TFG |
-| `01_exploracion_run.ipynb` | Exploración detallada de un run individual |
-| `02_hardware_timeline.ipynb` | Series temporales de hardware (temperatura, potencia…) |
-| `03_inferencia_metricas.ipynb` | Comparativa de métricas de inferencia entre modelos |
-| `04_comparativa_global.ipynb` | Comparativa global entre experimentos |
-| `05_experimentos_parametricos.ipynb` | Análisis paramétrico (contexto, batch, cuantización) |
+| `00_metodologia.ipynb` | Methodology diagrams and figures for the thesis |
+| `01_exploracion_run.ipynb` | Detailed exploration of a single run |
+| `02_hardware_timeline.ipynb` | Hardware time series (temperature, power…) |
+| `03_inferencia_metricas.ipynb` | Inference metrics comparison across models |
+| `04_comparativa_global.ipynb` | Global comparison across experiments |
+| `05_experimentos_parametricos.ipynb` | Parametric analysis (context, batch, quantization) |
 
-Todos los notebooks detectan automáticamente la raíz del proyecto independientemente de desde dónde se lancen (`notebooks/` o `notebooks/secundarios/`).
+All notebooks automatically detect the project root regardless of where they are launched from (`notebooks/` or `notebooks/secundarios/`).
 
-> **Nota sobre mayúsculas:** el submódulo git clona el directorio de datos como `tfg-data` (minúsculas), mientras que los notebooks esperan `TFG-DATA`. Si es necesario, ajusta el nombre en la celda de configuración de cada notebook.
-> Los notebooks secundarios se emplearon en un subconjunto reducido, de usar el dataset completo, pueden tardar mucho por lo que se desaconseja su uso. Además pueden contener errores o visualizaciones incorrectas.
+> **Case sensitivity note:** the git submodule checks out the data directory as `tfg-data` (lowercase), while the notebooks expect `TFG-DATA`. If needed, update the name in the configuration cell of each notebook.
+
+> Secondary notebooks were run on a reduced subset of the data. Running them on the full dataset may take a long time and is not recommended. They may also contain errors or incorrect visualisations.

@@ -270,10 +270,9 @@ class RunCollection:
         _n_cores = n_cores or TARGET_NUM_CORES
         _f_nom = f_nom_ghz or TARGET_NOMINAL_FREQ_GHZ
 
-        hw_full = self.hw_metrics_df()
         dfs = []
         for run in self.runs:
-            hw_r = hw_full[hw_full["run_id"] == run.run_id]
+            hw_r = hw_metrics_to_df(run)  # memoized per run
             if hw_r.empty:
                 continue
             df = cpu_work_by_phase(

@@ -1,7 +1,7 @@
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from .hw import HwSample
 from .meta import RunMeta
@@ -44,6 +44,10 @@ class Run(BaseModel):
     hw_samples: list[HwSample] = []
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    # Memoized hw DataFrame, filled by transforms.aggregations.hw_metrics_to_df.
+    # Stored as (key, DataFrame); the key detects a replaced/resized hw_samples list.
+    _hw_df_cache: Any = PrivateAttr(default=None)
 
     @property
     def has_hardware_data(self) -> bool:

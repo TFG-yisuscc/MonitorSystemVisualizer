@@ -179,47 +179,101 @@ _THROTTLE_FIELDS: list[str] = [
 ]
 
 
-def _expand_hw_sample(s: HwSample, run_start_ns: int) -> dict[str, Any]:
-    """Turn one HwSample into a flat dict, expanding throttling and freq stats."""
-    # Round per-core frequencies to 3 decimal places (1 MHz resolution) to
-    # suppress sub-MHz oscillator noise that pushes values like 2.400017 > 2.4.
-    freq = [round(f, 3) for f in s.frequency_ghz]
-    row = {
-        "timestamp_ms": s.timestamp_ms,
-        "t_rel_s": (s.timestamp_ms * 1_000_000 - run_start_ns) / 1e9,
-        "temperature_c": s.temperature_c,
-        "fan_rpm": s.fan_rpm,
-        "voltage_v": s.voltage_v,
-        "internal_power_w": s.internal_power_w,
-        "cpu_usage_pct": s.cpu_usage_pct,
-        "mem_used_bytes": s.mem_used_bytes,
-        "mem_total_bytes": s.mem_total_bytes,
-        "mem_pct": s.mem_pct,
-        "swap_used_bytes": s.swap_used_bytes,
-        "swap_total_bytes": s.swap_total_bytes,
-        "swap_pct": s.swap_pct,
-        "freq_mean_ghz": float(np.mean(freq)) if freq else math.nan,
-        "freq_max_ghz": float(np.max(freq)) if freq else math.nan,
-        "freq_min_ghz": float(np.min(freq)) if freq else math.nan,
-        "n_cores": len(freq),
+_HW_SCALAR_FIELDS: list[str] = [
+    "temperature_c",
+    "fan_rpm",
+    "voltage_v",
+    "internal_power_w",
+    "cpu_usage_pct",
+    "mem_used_bytes",
+    "mem_total_bytes",
+    "mem_pct",
+    "swap_used_bytes",
+    "swap_total_bytes",
+    "swap_pct",
+]
+
+
+def _freq_stats(samples: list[HwSample]) -> dict[str, np.ndarray]:
+    """Per-sample mean/max/min of per-core frequencies, plus core count.
+
+    Frequencies are rounded to 3 decimal places (1 MHz resolution) to
+    suppress sub-MHz oscillator noise that pushes values like 2.400017 > 2.4.
+    """
+    n = len(samples)
+    n_cores = np.fromiter((len(s.frequency_ghz) for s in samples), dtype=np.int64, count=n)
+    if n and n_cores.min() == n_cores.max() and n_cores[0] > 0:
+        freq = np.round(np.array([s.frequency_ghz for s in samples], dtype=np.float64), 3)
+        return {
+            "freq_mean_ghz": freq.mean(axis=1),
+            "freq_max_ghz": freq.max(axis=1),
+            "freq_min_ghz": freq.min(axis=1),
+            "n_cores": n_cores,
+        }
+
+    # Ragged or empty core lists: fall back to per-sample computation.
+    mean = np.full(n, math.nan)
+    fmax = np.full(n, math.nan)
+    fmin = np.full(n, math.nan)
+    for i, s in enumerate(samples):
+        if s.frequency_ghz:
+            f = np.round(np.asarray(s.frequency_ghz, dtype=np.float64), 3)
+            mean[i], fmax[i], fmin[i] = f.mean(), f.max(), f.min()
+    return {
+        "freq_mean_ghz": mean,
+        "freq_max_ghz": fmax,
+        "freq_min_ghz": fmin,
+        "n_cores": n_cores,
     }
+
+
+def _build_hw_df(run: Run) -> pd.DataFrame:
+    """Column-wise construction of the wide hw DataFrame for one run."""
+    samples = run.hw_samples
+    n = len(samples)
+    run_start_ns = run.summary.timestamp_run_start_ns
+
+    timestamp_ms = np.fromiter((s.timestamp_ms for s in samples), dtype=np.int64, count=n)
+    cols: dict[str, Any] = {k: [v] * n for k, v in _factor_dict(run).items()}
+    cols["timestamp_ms"] = timestamp_ms
+    cols["t_rel_s"] = (timestamp_ms * 1_000_000 - run_start_ns) / 1e9
+    for field in _HW_SCALAR_FIELDS:
+        cols[field] = [getattr(s, field) for s in samples]
+    cols.update(_freq_stats(samples))
+
+    throttling = [s.throttling for s in samples]
     for field in _THROTTLE_FIELDS:
-        row[f"throt_{field}"] = getattr(s.throttling, field)
-    row["throt_any_active"] = s.throttling.any_active
-    row["throt_any_ever_occurred"] = s.throttling.any_ever_occurred
-    return row
+        cols[f"throt_{field}"] = np.fromiter(
+            (getattr(t, field) for t in throttling), dtype=bool, count=n
+        )
+    cols["throt_any_active"] = (
+        cols["throt_under_voltage"] | cols["throt_freq_capped"]
+        | cols["throt_throttled"] | cols["throt_soft_throttled"]
+    )
+    cols["throt_any_ever_occurred"] = (
+        cols["throt_under_voltage_occurred"] | cols["throt_freq_capped_occurred"]
+        | cols["throt_throttled_occurred"] | cols["throt_soft_throttled_occurred"]
+    )
+    return pd.DataFrame(cols)
 
 
 def hw_metrics_to_df(run: Run) -> pd.DataFrame:
     """One row per hardware sample of a single run. Wide format with
-    aggregated frequency stats. Empty DataFrame if run has no hw data."""
+    aggregated frequency stats. Empty DataFrame if run has no hw data.
+
+    The result is memoized on the Run (invalidated if hw_samples is replaced
+    or resized). A shallow copy is returned so callers adding columns do not
+    alter the cached frame (pandas Copy-on-Write).
+    """
     if not run.has_hardware_data:
         return pd.DataFrame()
 
-    factors = _factor_dict(run)
-    run_start_ns = run.summary.timestamp_run_start_ns
-    rows = [{**factors, **_expand_hw_sample(s, run_start_ns)} for s in run.hw_samples]
-    return pd.DataFrame(rows)
+    key = (id(run.hw_samples), len(run.hw_samples), run.summary.timestamp_run_start_ns)
+    cached = run._hw_df_cache
+    if cached is None or cached[0] != key:
+        cached = (key, _build_hw_df(run))
+        run._hw_df_cache = cached
+    return cached[1].copy(deep=False)
 
 
 # --- hw frequency (long) ---------------------------------------------------
@@ -554,6 +608,38 @@ def _assign_phase(
     return None
 
 
+def _assign_phases(
+    t_rel_s: np.ndarray,
+    phase_intervals: list[tuple[float, float, str]],
+) -> np.ndarray:
+    """Vectorized ``_assign_phase`` over an array of sample times.
+
+    Returns an object array with the phase name of the first matching
+    interval (``t0 <= t < t1``) or None. Uses binary search when the
+    non-empty intervals do not overlap (then the match is unique); falls
+    back to the scalar lookup otherwise.
+    """
+    t = np.asarray(t_rel_s, dtype=np.float64)
+    iv = [(t0, t1, ph) for t0, t1, ph in phase_intervals if t1 > t0]  # empty ones never match
+    out = np.full(len(t), None, dtype=object)
+    if not iv:
+        return out
+
+    iv.sort(key=lambda x: x[0])
+    starts = np.array([x[0] for x in iv], dtype=np.float64)
+    ends = np.array([x[1] for x in iv], dtype=np.float64)
+    if np.any(starts[1:] < ends[:-1]):
+        out[:] = [_assign_phase(x, phase_intervals) for x in t]
+        return out
+
+    names = np.array([x[2] for x in iv], dtype=object)
+    idx = np.searchsorted(starts, t, side="right") - 1
+    safe = np.clip(idx, 0, None)
+    hit = (idx >= 0) & (t < ends[safe])
+    out[hit] = names[safe[hit]]
+    return out
+
+
 def cpu_work_by_phase(
     hw_df: pd.DataFrame,
     run: "Run",
@@ -597,7 +683,7 @@ def cpu_work_by_phase(
         return pd.DataFrame()
 
     hw = hw_df.copy()
-    hw["phase"] = hw["t_rel_s"].apply(lambda t: _assign_phase(t, intervals))
+    hw["phase"] = _assign_phases(hw["t_rel_s"].to_numpy(), intervals)
     hw = hw.dropna(subset=["phase"])
 
     hw["cpu_work_sample"] = (
@@ -649,6 +735,13 @@ def power_per_phase_df(run: Run) -> pd.DataFrame:
     if hw_df.empty:
         return pd.DataFrame()
 
+    # Sort samples by time once; each phase window then becomes a slice
+    # found by binary search (NaN times sort last and never fall in a window).
+    t_all = hw_df["t_rel_s"].to_numpy(dtype=np.float64)
+    order = np.argsort(t_all, kind="stable")
+    t_sorted = t_all[order]
+    pwr_sorted = hw_df["internal_power_w"].to_numpy(dtype=np.float64)[order]
+
     rows: list[dict] = []
     for p in run.prompts:
         if p.is_empty_generation:
@@ -668,8 +761,10 @@ def power_per_phase_df(run: Run) -> pd.DataFrame:
         ]
 
         for phase_name, t_start, t_end in phases:
-            mask = (hw_df["t_rel_s"] >= t_start) & (hw_df["t_rel_s"] < t_end)
-            samples = hw_df.loc[mask, "internal_power_w"]
+            lo = int(np.searchsorted(t_sorted, t_start, side="left"))
+            hi = max(lo, int(np.searchsorted(t_sorted, t_end, side="left")))
+            samples = pwr_sorted[lo:hi]
+            finite = samples[~np.isnan(samples)]
             rows.append({
                 **factors,
                 "prompt_id":     p.prompt_id,
@@ -678,7 +773,7 @@ def power_per_phase_df(run: Run) -> pd.DataFrame:
                 "phase_end_s":   t_end,
                 "phase_dur_s":   t_end - t_start,
                 "n_hw_samples":  len(samples),
-                "power_mean_w":  float(samples.mean()) if len(samples) > 0 else float("nan"),
+                "power_mean_w":  float(finite.mean()) if len(finite) > 0 else float("nan"),
             })
 
     return pd.DataFrame(rows)
